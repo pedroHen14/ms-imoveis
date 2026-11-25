@@ -67,6 +67,14 @@ const propertySchema = z.object({
   city: z.string().trim().min(2, "Informe a cidade.").max(80),
   address: z.string().trim().max(240).nullable(),
   description: z.string().trim().max(6000).nullable(),
+  ai_notes: z
+    .string()
+    .trim()
+    .max(
+      2000,
+      "As informações para o Assistente de WhatsApp podem ter no máximo 2.000 caracteres.",
+    )
+    .nullable(),
   imageUrls: z.array(z.string().url()).max(40),
 });
 
@@ -127,6 +135,7 @@ export async function saveProperty(
     city: formData.get("city")?.toString().trim() || "Cotia",
     address: formData.get("address")?.toString().trim() || null,
     description: formData.get("description")?.toString().trim() || null,
+    ai_notes: formData.get("ai_notes")?.toString().trim() || null,
     imageUrls: parsedImages,
   });
 
@@ -184,6 +193,7 @@ export async function saveProperty(
         city: data.city,
         address: data.address,
         description: data.description,
+        ai_notes: data.ai_notes,
       })
       .eq("id", data.id);
 
@@ -282,6 +292,7 @@ export async function saveProperty(
       city: data.city,
       address: data.address,
       description: data.description,
+      ai_notes: data.ai_notes,
     })
     .select("id, code")
     .single();

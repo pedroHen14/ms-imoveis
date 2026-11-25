@@ -86,6 +86,47 @@ export function buildPropertySlug(params: {
   return slugify(parts.join(" "));
 }
 
+export function normalizePhoneE164(value: string | null | undefined): string {
+  if (!value) return "";
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+  return digits;
+}
+
+export function buildPhoneCandidates(value: string | null | undefined): string[] {
+  if (!value) return [];
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return [];
+
+  const e164 = normalizePhoneE164(digits);
+  const local =
+    e164.startsWith("55") && e164.length >= 12 ? e164.slice(2) : e164;
+
+  return Array.from(new Set([e164, local, digits].filter(Boolean)));
+}
+
+export function formatShortDateTimeBR(isoDate: string): string {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Sao_Paulo",
+  }).formatToParts(date);
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  return `${get("day")}/${get("month")} ${get("hour")}:${get("minute")}`;
+}
+
 export function buildWhatsAppUrl(
   message: string,
   phoneDigits: string = BROKER_INFO.whatsappDigits,

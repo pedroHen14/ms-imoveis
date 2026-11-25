@@ -3,7 +3,15 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, Loader2, Save } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Bot,
+  ChevronDown,
+  Loader2,
+  Lock,
+  Save,
+} from "lucide-react";
 import type {
   Owner,
   Property,
@@ -51,6 +59,9 @@ export function PropertyForm({
   const [images, setImages] = useState<string[]>(initialImages);
   const [description, setDescription] = useState<string>(
     property?.description ?? "",
+  );
+  const [aiNotesOpen, setAiNotesOpen] = useState<boolean>(
+    Boolean(property?.ai_notes?.trim()),
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -513,6 +524,69 @@ export function PropertyForm({
           getFormSnapshot={getFormSnapshot}
           onApplySiteDescription={(text) => setDescription(text)}
         />
+
+        {/* Bloco recolhível discreto: Notas internas para o Assistente de WhatsApp */}
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70">
+          <button
+            type="button"
+            onClick={() => setAiNotesOpen((prev) => !prev)}
+            aria-expanded={aiNotesOpen}
+            aria-controls="property-ai-notes-panel"
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-100/70"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Bot className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    Informações para o Assistente de WhatsApp (interno)
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-muted">
+                    <Lock className="h-3 w-3" />
+                    Não aparece no site
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted">
+                  Opcional — oriente a IA sobre negociação, financiamento,
+                  permuta e documentação deste imóvel.
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-muted transition-transform ${
+                aiNotesOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          <div
+            id="property-ai-notes-panel"
+            className={aiNotesOpen ? "border-t border-slate-200 px-4 pb-4 pt-3" : "hidden"}
+          >
+            <label
+              htmlFor="ai_notes"
+              className="block text-xs font-medium text-foreground"
+            >
+              Notas rápidas para o atendimento automatizado
+            </label>
+            <textarea
+              id="ai_notes"
+              name="ai_notes"
+              rows={3}
+              maxLength={2000}
+              defaultValue={property?.ai_notes ?? ""}
+              placeholder="Ex: Aceita financiamento? Aceita permuta? Posição do sol? Documentação OK?"
+              className="mt-1.5 w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm leading-relaxed text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+            <p className="mt-1.5 text-[11px] text-muted">
+              Estas observações são consultadas exclusivamente pelo Assistente de
+              WhatsApp para responder dúvidas frequentes sem poluir a descrição
+              pública.
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* Seção 6: Fotos */}

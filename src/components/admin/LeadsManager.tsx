@@ -3,11 +3,15 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
+  Bot,
+  BotOff,
   Building2,
   Clock,
   Loader2,
   MessageCircle,
+  PauseCircle,
   Pencil,
+  PlayCircle,
   Plus,
   Search,
   Trash2,
@@ -18,11 +22,13 @@ import {
   BROKER_INFO,
   buildWhatsAppUrl,
   formatPhoneBR,
+  formatShortDateTimeBR,
 } from "@/lib/format";
 import {
   deleteLead,
   registerLeadWhatsAppContact,
   saveLead,
+  toggleLeadWhatsappAi,
   updateLeadStatus,
 } from "@/app/admin/(panel)/leads/actions";
 
@@ -33,8 +39,15 @@ export interface LeadPropertyRef {
   condominium: string | null;
 }
 
+export interface LeadWhatsappSession {
+  phone: string;
+  bot_paused_until: string | null;
+  last_interaction_at: string;
+}
+
 export interface LeadWithProperty extends Lead {
   property: LeadPropertyRef | null;
+  whatsappSession: LeadWhatsappSession | null;
 }
 
 interface LeadsManagerProps {
@@ -118,6 +131,12 @@ function formatLastContact(isoDate: string): string {
   if (days === 0) return "Hoje";
   if (days === 1) return "Ontem";
   return `Há ${days} dias`;
+}
+
+function isWhatsappBotPaused(session: LeadWhatsappSession | null): boolean {
+  if (!session?.bot_paused_until) return false;
+  const pausedUntilMs = new Date(session.bot_paused_until).getTime();
+  return !Number.isNaN(pausedUntilMs) && pausedUntilMs > Date.now();
 }
 
 function getStatusSelectClass(status: LeadStatus): string {
@@ -260,12 +279,46 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
       if (result.ok) {
         setFeedback({
           type: "success",
-          text: `Contato via WhatsApp registrado para ${lead.name}.`,
+          text: result.aiPaused
+            ? `Contato via WhatsApp registrado para ${lead.name} e IA pausada por 24h.`
+            : `Contato via WhatsApp registrado para ${lead.name}.`,
         });
       } else {
         setFeedback({
           type: "error",
           text: result.message ?? "Erro ao atualizar data de contato.",
+        });
+      }
+    });
+  }
+
+  function handleToggleAi(lead: LeadWithProperty, pause: boolean) {
+    if (!lead.whatsappSession) return;
+
+    setBusyLeadId(lead.id);
+    setFeedback(null);
+    startTransition(async () => {
+      const result = await toggleLeadWhatsappAi({
+        leadId: lead.id,
+        pause,
+        sessionPhone: lead.whatsappSession?.phone ?? null,
+      });
+      setBusyLeadId(null);
+      if (result.ok) {
+        setFeedback({
+          type: "success",
+          text: pause
+            ? `Assistente de IA pausado por 24h para ${lead.name}.`
+            : `Assistente de IA reativado para ${lead.name}.`,
+        });
+      } else {
+        setFeedback({
+          type: "error",
+          text:
+            result.message ??
+            (pause
+              ? "Não foi possível pausar a IA."
+              : "Não foi possível reativar a IA."),
         });
       }
     });
@@ -437,12 +490,13 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3.5">Interessado</th>
-                  <th className="px-5 py-3.5">Imóvel / Observações</th>
-                  <th className="px-5 py-3.5">Origem</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Último Contato</th>
-                  <th className="px-5 py-3.5 text-right">Ações</th>
+                  <th className="px-4 py-3.5">Interessado</th>
+                  <th className="px-4 py-3.5">Imóvel / Observações</th>
+                  <th className="px-4 py-3.5">Origem</th>
+                  <th className="px-4 py-3.5">Assistente IA</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Último Contato</th>
+                  <th className="px-4 py-3.5 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -450,6 +504,14 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                   const overdue = isLeadOverdue(lead);
                   const daysSince = getDaysSince(lead.last_contact_at);
                   const isRowBusy = isPending && busyLeadId === lead.id;
+                  const hasSession = Boolean(lead.whatsappSession);
+                  const botPaused = isWhatsappBotPaused(lead.whatsappSession);
+                  const pausedUntilLabel =
+                    botPaused && lead.whatsappSession?.bot_paused_until
+                      ? formatShortDateTimeBR(
+                          lead.whatsappSession.bot_paused_until,
+                        )
+                      : "";
 
                   return (
                     <tr
@@ -458,7 +520,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                         overdue ? "bg-amber-50/35" : ""
                       }`}
                     >
-                      <td className="px-5 py-4 align-top">
+                      <td className="px-4 py-4 align-top">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-foreground">
                             {lead.name}
@@ -481,7 +543,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                         ) : null}
                       </td>
 
-                      <td className="max-w-xs px-5 py-4 align-top">
+                      <td className="max-w-xs px-4 py-4 align-top">
                         {lead.property ? (
                           <div className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
                             <Building2 className="h-3.5 w-3.5 shrink-0" />
@@ -501,13 +563,59 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                         ) : null}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 align-top">
+                      <td className="whitespace-nowrap px-4 py-4 align-top">
                         <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-foreground">
                           {LEAD_SOURCE_LABELS[lead.source] ?? lead.source}
                         </span>
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 align-top">
+                      <td className="whitespace-nowrap px-4 py-4 align-top">
+                        {hasSession ? (
+                          <div className="flex flex-col items-start gap-1.5">
+                            {botPaused ? (
+                              <span
+                                title={`Atendimento automatizado pausado até ${pausedUntilLabel}`}
+                                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900"
+                              >
+                                <BotOff className="h-3 w-3 shrink-0" />
+                                IA Pausada até {pausedUntilLabel}
+                              </span>
+                            ) : (
+                              <span
+                                title="Assistente de WhatsApp respondendo este contato normalmente"
+                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800"
+                              >
+                                <Bot className="h-3 w-3 shrink-0" />
+                                IA Ativa
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              disabled={isRowBusy}
+                              onClick={() => handleToggleAi(lead, !botPaused)}
+                              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-60 ${
+                                botPaused
+                                  ? "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
+                                  : "border-amber-200 bg-white text-amber-900 hover:bg-amber-50"
+                              }`}
+                            >
+                              {isRowBusy ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : botPaused ? (
+                                <PlayCircle className="h-3 w-3" />
+                              ) : (
+                                <PauseCircle className="h-3 w-3" />
+                              )}
+                              {botPaused ? "Reativar IA" : "Pausar IA (24h)"}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted">—</span>
+                        )}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 align-top">
                         <select
                           aria-label={`Status do lead ${lead.name}`}
                           value={lead.status}
@@ -532,7 +640,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                         </select>
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 align-top">
+                      <td className="whitespace-nowrap px-4 py-4 align-top">
                         <div
                           className={`inline-flex items-center gap-1 text-xs font-medium ${
                             overdue ? "text-amber-800" : "text-muted"
@@ -543,13 +651,17 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
                         </div>
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-right align-top">
+                      <td className="whitespace-nowrap px-4 py-4 text-right align-top">
                         <div className="inline-flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleWhatsAppClick(lead)}
                             disabled={isRowBusy}
-                            title="Abrir conversa no WhatsApp e registrar contato agora"
+                            title={
+                              hasSession
+                                ? "Abrir conversa no WhatsApp, registrar contato e pausar IA por 24h"
+                                : "Abrir conversa no WhatsApp e registrar contato agora"
+                            }
                             className="inline-flex items-center gap-1.5 rounded-lg bg-whatsapp px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-whatsapp-hover disabled:opacity-60"
                           >
                             <MessageCircle className="h-3.5 w-3.5" />
