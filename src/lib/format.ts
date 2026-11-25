@@ -127,12 +127,35 @@ export function formatShortDateTimeBR(isoDate: string): string {
   return `${get("day")}/${get("month")} ${get("hour")}:${get("minute")}`;
 }
 
+export function getPublicWhatsAppDigits(): string {
+  const configured = process.env.NEXT_PUBLIC_WHATSAPP_BOT_NUMBER?.trim();
+  if (configured) {
+    const digits = configured.replace(/\D/g, "");
+    if (digits.length >= 10) {
+      return normalizePhoneE164(digits);
+    }
+  }
+  return BROKER_INFO.whatsappDigits;
+}
+
+export function getPublicWhatsAppFormatted(): string {
+  return formatPhoneBR(getPublicWhatsAppDigits()) || BROKER_INFO.whatsappFormatted;
+}
+
+export function buildPropertyWhatsAppMessage(
+  title: string,
+  code: number,
+): string {
+  return `Olá! Vi o imóvel ${title} (Cód. ${code}) no site e gostaria de mais informações.`;
+}
+
 export function buildWhatsAppUrl(
   message: string,
-  phoneDigits: string = BROKER_INFO.whatsappDigits,
+  phoneDigits: string = getPublicWhatsAppDigits(),
 ): string {
   const cleanDigits = phoneDigits.replace(/\D/g, "");
-  const normalizedDigits =
-    cleanDigits.startsWith("55") ? cleanDigits : `55${cleanDigits}`;
+  const fallbackDigits = BROKER_INFO.whatsappDigits;
+  const effectiveDigits = cleanDigits.length >= 10 ? cleanDigits : fallbackDigits;
+  const normalizedDigits = normalizePhoneE164(effectiveDigits);
   return `https://wa.me/${normalizedDigits}?text=${encodeURIComponent(message)}`;
 }

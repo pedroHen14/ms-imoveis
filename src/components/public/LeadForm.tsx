@@ -1,16 +1,18 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Send } from "lucide-react";
 import {
   submitPublicLead,
   type LeadFormState,
 } from "@/app/(public)/imoveis/[slug]/actions";
+import { trackLeadConversion } from "@/lib/tracking";
 
 interface LeadFormProps {
   propertyId: string;
   propertyTitle: string;
   propertyCode: number;
+  propertyPrice?: number | null;
 }
 
 const INITIAL_STATE: LeadFormState = {
@@ -31,12 +33,26 @@ export function LeadForm({
   propertyId,
   propertyTitle,
   propertyCode,
+  propertyPrice,
 }: LeadFormProps) {
   const [state, formAction, isPending] = useActionState(
     submitPublicLead,
     INITIAL_STATE,
   );
   const [phone, setPhone] = useState("");
+  const trackedSuccessRef = useRef(false);
+
+  useEffect(() => {
+    if (state.status === "success" && !trackedSuccessRef.current) {
+      trackedSuccessRef.current = true;
+      trackLeadConversion({
+        method: "form",
+        propertyCode,
+        propertyTitle,
+        value: propertyPrice,
+      });
+    }
+  }, [state.status, propertyCode, propertyTitle, propertyPrice]);
 
   if (state.status === "success") {
     return (

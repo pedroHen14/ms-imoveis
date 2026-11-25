@@ -15,11 +15,18 @@ import {
 } from "lucide-react";
 import { PropertyCard } from "@/components/public/PropertyCard";
 import { PropertySearchBar } from "@/components/public/PropertySearchBar";
-import { BROKER_INFO, buildWhatsAppUrl } from "@/lib/format";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
 import {
+  BROKER_INFO,
+  buildWhatsAppUrl,
+  getPublicWhatsAppFormatted,
+} from "@/lib/format";
+import {
+  getActiveCondominiums,
   getAvailableLocations,
   getFeaturedProperties,
 } from "@/lib/properties";
+import { buildRealEstateAgentJsonLd, serializeJsonLd } from "@/lib/seo";
 
 export const revalidate = 60;
 
@@ -27,10 +34,12 @@ const HERO_IMAGE_URL =
   "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1920&q=80";
 
 export default async function HomePage() {
-  const [featuredProperties, availableLocations] = await Promise.all([
-    getFeaturedProperties(6),
-    getAvailableLocations(),
-  ]);
+  const [featuredProperties, availableLocations, activeCondominiums] =
+    await Promise.all([
+      getFeaturedProperties(6),
+      getAvailableLocations(),
+      getActiveCondominiums(8),
+    ]);
 
   const generalWhatsApp = buildWhatsAppUrl(
     "Olá Marcelo, vim pelo seu site e gostaria de conversar sobre imóveis em Cotia e Granja Vianna.",
@@ -40,8 +49,15 @@ export default async function HomePage() {
     "Olá Marcelo, tenho um imóvel em Cotia / Granja Vianna e gostaria de anunciar com você.",
   );
 
+  const publicWhatsAppFormatted = getPublicWhatsAppFormatted();
+  const agentJsonLd = buildRealEstateAgentJsonLd();
+
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(agentJsonLd) }}
+      />
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-primary">
         <div className="absolute inset-0">
@@ -177,18 +193,75 @@ export default async function HomePage() {
               Nossa carteira está sendo atualizada. Fale diretamente com o
               Marcelo no WhatsApp para receber opções exclusivas na região.
             </p>
-            <a
+            <TrackedWhatsAppLink
               href={generalWhatsApp}
-              target="_blank"
-              rel="noopener noreferrer"
+              label="Home Empty State WhatsApp"
               className="mt-5 inline-flex items-center gap-2 rounded-lg bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
             >
               <MessageCircle className="h-4 w-4" />
               <span>Solicitar opções no WhatsApp</span>
-            </a>
+            </TrackedWhatsAppLink>
           </div>
         )}
       </section>
+
+      {/* Condomínios em Destaque (SEO Local) */}
+      {activeCondominiums.length > 0 && (
+        <section className="border-t border-border bg-background py-14 lg:py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-accent">
+                  Busca por Localização
+                </span>
+                <h2 className="mt-1 font-serif text-2xl font-semibold text-primary sm:text-3xl">
+                  Condomínios em Destaque em Cotia
+                </h2>
+                <p className="mt-1.5 max-w-2xl text-sm text-muted">
+                  Explore diretamente os imóveis disponíveis nos principais
+                  condomínios atendidos na Granja Vianna e região.
+                </p>
+              </div>
+
+              <Link
+                href="/imoveis"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary transition-colors hover:text-primary-hover"
+              >
+                <span>Explorar catálogo completo</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="mt-7 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+              {activeCondominiums.map((condo) => (
+                <Link
+                  key={condo.name}
+                  href={`/imoveis?location=${encodeURIComponent(condo.name)}`}
+                  className="group flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+                      <MapPin className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                        {condo.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted">
+                        {condo.count === 1
+                          ? "1 imóvel disponível"
+                          : `${condo.count} imóveis disponíveis`}
+                        {condo.neighborhood ? ` • ${condo.neighborhood}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Bloco "Sobre Marcelo Santos" */}
       <section
@@ -261,25 +334,23 @@ export default async function HomePage() {
 
               {/* CTAs */}
               <div className="mt-8 flex flex-wrap items-center gap-3.5">
-                <a
+                <TrackedWhatsAppLink
                   href={generalWhatsApp}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  label="Home Sobre WhatsApp"
                   className="inline-flex items-center gap-2 rounded-lg bg-whatsapp px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
                 >
                   <MessageCircle className="h-4 w-4" />
                   <span>Conversar no WhatsApp</span>
-                </a>
+                </TrackedWhatsAppLink>
 
-                <a
+                <TrackedWhatsAppLink
                   href={captacaoWhatsApp}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  label="Home Captacao WhatsApp"
                   className="inline-flex items-center gap-2 rounded-lg border border-primary bg-surface px-5 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
                 >
                   <span>Quer vender ou alugar seu imóvel?</span>
                   <ArrowRight className="h-4 w-4" />
-                </a>
+                </TrackedWhatsAppLink>
               </div>
             </div>
           </div>
@@ -306,20 +377,19 @@ export default async function HomePage() {
               </p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <a
+                <TrackedWhatsAppLink
                   href={generalWhatsApp}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  label="Home Contato Card WhatsApp"
                   className="flex items-center gap-3 rounded-xl border border-border bg-background p-3.5 transition-colors hover:border-whatsapp"
                 >
                   <MessageCircle className="h-5 w-5 shrink-0 text-whatsapp" />
                   <div className="min-w-0">
                     <span className="block text-xs text-muted">WhatsApp</span>
                     <span className="block truncate text-sm font-semibold text-foreground">
-                      {BROKER_INFO.whatsappFormatted}
+                      {publicWhatsAppFormatted}
                     </span>
                   </div>
-                </a>
+                </TrackedWhatsAppLink>
 
                 <a
                   href={`mailto:${BROKER_INFO.email}`}
@@ -369,15 +439,14 @@ export default async function HomePage() {
                 Conte o que você procura e receba uma curadoria personalizada de
                 imóveis disponíveis.
               </p>
-              <a
+              <TrackedWhatsAppLink
                 href={generalWhatsApp}
-                target="_blank"
-                rel="noopener noreferrer"
+                label="Home Contato CTA WhatsApp"
                 className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg bg-whatsapp px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
               >
                 <MessageCircle className="h-5 w-5" />
                 <span>Chamar Marcelo no WhatsApp</span>
-              </a>
+              </TrackedWhatsAppLink>
             </div>
           </div>
         </div>

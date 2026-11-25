@@ -7,18 +7,32 @@ import {
   MessageCircle,
   ShieldCheck,
 } from "lucide-react";
-import { BROKER_INFO, buildWhatsAppUrl } from "@/lib/format";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
+import {
+  BROKER_INFO,
+  buildWhatsAppUrl,
+  getPublicWhatsAppFormatted,
+} from "@/lib/format";
+import { getActiveCondominiums } from "@/lib/properties";
 
-export function Footer() {
+export async function Footer() {
   const currentYear = new Date().getFullYear();
+  const activeCondominiums = await getActiveCondominiums(6);
+
   const whatsappHref = buildWhatsAppUrl(
     "Olá Marcelo, vim pelo seu site e gostaria de conversar sobre um imóvel.",
   );
+  const publicWhatsAppFormatted = getPublicWhatsAppFormatted();
+  const hasCondominiums = activeCondominiums.length > 0;
 
   return (
     <footer className="border-t border-primary-hover/30 bg-primary text-white">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="grid gap-10 md:grid-cols-3">
+        <div
+          className={`grid gap-10 ${
+            hasCondominiums ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"
+          }`}
+        >
           {/* Coluna 1: Marca e CRECI */}
           <div>
             <div className="flex items-center gap-3">
@@ -93,22 +107,45 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Coluna 3: Contatos Oficiais */}
+          {/* Coluna 3 (SEO Local): Condomínios Ativos */}
+          {hasCondominiums && (
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-accent">
+                Condomínios em Cotia
+              </h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-white/80">
+                {activeCondominiums.map((condo) => (
+                  <li key={condo.name}>
+                    <Link
+                      href={`/imoveis?location=${encodeURIComponent(condo.name)}`}
+                      className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
+                    >
+                      <span>{condo.name}</span>
+                      <span className="text-xs text-white/55">
+                        ({condo.count})
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Coluna Final: Contatos Oficiais */}
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-wider text-accent">
               Contato Direto
             </h3>
             <ul className="mt-4 space-y-3 text-sm text-white/85">
               <li>
-                <a
+                <TrackedWhatsAppLink
                   href={whatsappHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  label="Footer WhatsApp"
                   className="inline-flex items-center gap-2.5 transition-colors hover:text-white"
                 >
                   <MessageCircle className="h-4 w-4 text-whatsapp" />
-                  <span>{BROKER_INFO.whatsappFormatted}</span>
-                </a>
+                  <span>{publicWhatsAppFormatted}</span>
+                </TrackedWhatsAppLink>
               </li>
               <li>
                 <a

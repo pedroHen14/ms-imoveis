@@ -4,7 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, Menu, MessageCircle, X } from "lucide-react";
-import { BROKER_INFO, buildWhatsAppUrl } from "@/lib/format";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
+import {
+  BROKER_INFO,
+  buildWhatsAppUrl,
+  getPublicWhatsAppFormatted,
+} from "@/lib/format";
 
 const NAV_LINKS = [
   { href: "/", label: "Início" },
@@ -20,6 +25,7 @@ export function Header() {
   const whatsappHref = buildWhatsAppUrl(
     "Olá Marcelo, vim pelo seu site e gostaria de mais informações sobre imóveis em Cotia e Granja Vianna.",
   );
+  const publicWhatsAppFormatted = getPublicWhatsAppFormatted();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur-md">
@@ -74,15 +80,14 @@ export function Header() {
 
         {/* CTA WhatsApp Desktop */}
         <div className="hidden items-center gap-3 md:flex">
-          <a
+          <TrackedWhatsAppLink
             href={whatsappHref}
-            target="_blank"
-            rel="noopener noreferrer"
+            label="Header Desktop WhatsApp"
             className="inline-flex items-center gap-2 rounded-lg bg-whatsapp px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
           >
             <MessageCircle className="h-4 w-4" />
             <span>WhatsApp</span>
-          </a>
+          </TrackedWhatsAppLink>
         </div>
 
         {/* Botão Menu Mobile */}
@@ -134,15 +139,15 @@ export function Header() {
           </nav>
 
           <div className="mt-4 border-t border-border pt-4">
-            <a
+            <TrackedWhatsAppLink
               href={whatsappHref}
-              target="_blank"
-              rel="noopener noreferrer"
+              label="Header Mobile WhatsApp"
+              onClick={() => setMobileMenuOpen(false)}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-whatsapp px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
             >
               <MessageCircle className="h-4 w-4" />
-              <span>Falar no WhatsApp • {BROKER_INFO.whatsappFormatted}</span>
-            </a>
+              <span>Falar no WhatsApp • {publicWhatsAppFormatted}</span>
+            </TrackedWhatsAppLink>
           </div>
         </div>
       )}

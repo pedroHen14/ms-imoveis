@@ -10,6 +10,7 @@ import {
 import { PropertyCard } from "@/components/public/PropertyCard";
 import { PropertySearchBar } from "@/components/public/PropertySearchBar";
 import { PropertySortSelect } from "@/components/public/PropertySortSelect";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
 import {
   BROKER_INFO,
   PROPERTY_PURPOSE_LABELS,
@@ -18,16 +19,13 @@ import {
   formatCurrency,
 } from "@/lib/format";
 import {
+  getActiveCondominiums,
   getAvailableLocations,
   getFilteredProperties,
   type PropertySortOption,
 } from "@/lib/properties";
+import { formatListingSeoCopy } from "@/lib/seo";
 import type { PropertyPurpose, PropertyType } from "@/types/database";
-
-export const metadata: Metadata = {
-  title: "Imóveis em Cotia e Granja Vianna",
-  description: `Confira casas, apartamentos, terrenos e imóveis comerciais à venda e para locação em Cotia e Granja Vianna. ${BROKER_INFO.brandName} — CRECI ${BROKER_INFO.creci}.`,
-};
 
 interface ImoveisPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -59,9 +57,9 @@ const VALID_SORTS = new Set<PropertySortOption>([
   "maior-preco",
 ]);
 
-export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
-  const rawParams = await searchParams;
-
+function parseFilterSearchParams(
+  rawParams: Record<string, string | string[] | undefined>,
+) {
   const rawPurpose = getStringParam(rawParams.purpose);
   const purpose =
     rawPurpose && VALID_PURPOSES.has(rawPurpose as PropertyPurpose)
@@ -84,9 +82,58 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
       ? (rawSort as PropertySortOption)
       : "recentes";
 
-  const page = Math.max(1, Math.floor(parseNumberParam(getStringParam(rawParams.page)) ?? 1));
+  const page = Math.max(
+    1,
+    Math.floor(parseNumberParam(getStringParam(rawParams.page)) ?? 1),
+  );
 
-  const [result, availableLocations] = await Promise.all([
+  return { purpose, type, location, minPrice, maxPrice, sort, page };
+}
+
+export async function generateMetadata({
+  searchParams,
+}: ImoveisPageProps): Promise<Metadata> {
+  const rawParams = await searchParams;
+  const { purpose, type, location } = parseFilterSearchParams(rawParams);
+
+  const activeCondominiums = location ? await getActiveCondominiums(50) : [];
+  const seoCopy = formatListingSeoCopy({
+    purpose,
+    type,
+    location,
+    activeCondominiums,
+  });
+
+  const canonicalParams = new URLSearchParams();
+  if (purpose) canonicalParams.set("purpose", purpose);
+  if (type) canonicalParams.set("type", type);
+  if (location) canonicalParams.set("location", location);
+  const qs = canonicalParams.toString();
+  const canonicalPath = qs ? `/imoveis?${qs}` : "/imoveis";
+
+  return {
+    title: seoCopy.title,
+    description: seoCopy.description,
+    alternates: {
+      canonical: canonicalPath,
+    },
+    openGraph: {
+      type: "website",
+      locale: "pt_BR",
+      url: canonicalPath,
+      siteName: BROKER_INFO.brandName,
+      title: `${seoCopy.title} | ${BROKER_INFO.shortBrandName}`,
+      description: seoCopy.description,
+    },
+  };
+}
+
+export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
+  const rawParams = await searchParams;
+  const { purpose, type, location, minPrice, maxPrice, sort, page } =
+    parseFilterSearchParams(rawParams);
+
+  const [result, availableLocations, activeCondominiums] = await Promise.all([
     getFilteredProperties({
       purpose,
       type,
@@ -98,7 +145,15 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
       pageSize: 12,
     }),
     getAvailableLocations(),
+    location ? getActiveCondominiums(50) : Promise.resolve([]),
   ]);
+
+  const seoCopy = formatListingSeoCopy({
+    purpose,
+    type,
+    location,
+    activeCondominiums,
+  });
 
   const hasActiveFilters = Boolean(
     purpose ||
@@ -147,7 +202,7 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
           Carteira de Imóveis
         </span>
         <h1 className="mt-1 font-serif text-3xl font-semibold text-primary sm:text-4xl">
-          Imóveis em Cotia e Granja Vianna
+          {seoCopy.heading}
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted sm:text-base">
           Use os filtros abaixo para encontrar casas, apartamentos e terrenos
@@ -276,15 +331,14 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
               </Link>
             )}
 
-            <a
+            <TrackedWhatsAppLink
               href={customWhatsApp}
-              target="_blank"
-              rel="noopener noreferrer"
+              label="Listagem Empty State WhatsApp"
               className="inline-flex items-center gap-2 rounded-lg bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
             >
               <MessageCircle className="h-4 w-4" />
               <span>Falar com o Marcelo no WhatsApp</span>
-            </a>
+            </TrackedWhatsAppLink>
           </div>
         </div>
       )}

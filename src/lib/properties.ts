@@ -227,6 +227,68 @@ export async function getFilteredProperties(
   }
 }
 
+export interface ActiveCondominium {
+  name: string;
+  count: number;
+  neighborhood: string | null;
+}
+
+export async function getActiveCondominiums(
+  limit = 12,
+): Promise<ActiveCondominium[]> {
+  const supabase = createPublicClient();
+  if (!supabase) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("condominium, neighborhood")
+      .eq("status", "disponivel")
+      .not("condominium", "is", null);
+
+    if (error || !data) {
+      return [];
+    }
+
+    const grouped = new Map<string, ActiveCondominium>();
+
+    for (const row of data) {
+      const name = row.condominium?.trim();
+      if (!name) continue;
+
+      const key = name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count += 1;
+        if (!existing.neighborhood && row.neighborhood?.trim()) {
+          existing.neighborhood = row.neighborhood.trim();
+        }
+      } else {
+        grouped.set(key, {
+          name,
+          count: 1,
+          neighborhood: row.neighborhood?.trim() || null,
+        });
+      }
+    }
+
+    return Array.from(grouped.values())
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.name.localeCompare(b.name, "pt-BR");
+      })
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 export async function getAvailableLocations(): Promise<string[]> {
   const supabase = createPublicClient();
   if (!supabase) {

@@ -19,19 +19,23 @@ import { LeadForm } from "@/components/public/LeadForm";
 import { PropertyCard } from "@/components/public/PropertyCard";
 import { PropertyDescription } from "@/components/public/PropertyDescription";
 import { PropertyGallery } from "@/components/public/PropertyGallery";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
 import {
   BROKER_INFO,
   PROPERTY_PURPOSE_LABELS,
   PROPERTY_TYPE_LABELS,
+  buildPropertyWhatsAppMessage,
   buildWhatsAppUrl,
   formatArea,
   formatCurrency,
+  getPublicWhatsAppFormatted,
 } from "@/lib/format";
 import {
   getCoverImageUrl,
   getPropertyBySlug,
   getRelatedProperties,
 } from "@/lib/properties";
+import { buildRealEstateListingJsonLd, serializeJsonLd } from "@/lib/seo";
 
 export const revalidate = 60;
 
@@ -126,8 +130,13 @@ export default async function PropertyDetailPage({
   const areaBuiltLabel = formatArea(property.area_built);
   const areaTotalLabel = formatArea(property.area_total);
 
-  const whatsappMessage = `Olá Marcelo, vi o imóvel ${property.title} - Cód. ${property.code} no seu site e gostaria de mais informações.`;
+  const whatsappMessage = buildPropertyWhatsAppMessage(
+    property.title,
+    property.code,
+  );
   const whatsappHref = buildWhatsAppUrl(whatsappMessage);
+  const publicWhatsAppFormatted = getPublicWhatsAppFormatted();
+  const listingJsonLd = buildRealEstateListingJsonLd(property);
 
   const locationBreadcrumb =
     property.condominium || property.neighborhood || property.city;
@@ -141,6 +150,10 @@ export default async function PropertyDetailPage({
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(listingJsonLd) }}
+      />
       {/* Breadcrumb */}
       <nav
         aria-label="Navegação estrutural"
@@ -424,17 +437,19 @@ export default async function PropertyDetailPage({
 
               {/* Conversão 1: WhatsApp */}
               <div className="mt-5">
-                <a
+                <TrackedWhatsAppLink
                   href={whatsappHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  label="Detalhe Imovel WhatsApp"
+                  propertyCode={property.code}
+                  propertyTitle={property.title}
+                  value={property.price}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-whatsapp px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
                 >
                   <MessageCircle className="h-5 w-5" />
                   <span>Chamar no WhatsApp</span>
-                </a>
+                </TrackedWhatsAppLink>
                 <p className="mt-2 text-center text-xs text-muted">
-                  Resposta rápida pelo {BROKER_INFO.whatsappFormatted}
+                  Resposta rápida pelo {publicWhatsAppFormatted}
                 </p>
               </div>
 
@@ -451,6 +466,7 @@ export default async function PropertyDetailPage({
                 propertyId={property.id}
                 propertyTitle={property.title}
                 propertyCode={property.code}
+                propertyPrice={property.price}
               />
             </div>
 

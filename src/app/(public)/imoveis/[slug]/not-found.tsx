@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Building2, MessageCircle } from "lucide-react";
+import { TrackedWhatsAppLink } from "@/components/public/TrackedWhatsAppLink";
 import { buildWhatsAppUrl } from "@/lib/format";
 
 export default function PropertyNotFound() {
@@ -32,15 +33,14 @@ export default function PropertyNotFound() {
           <span>Ver imóveis disponíveis</span>
         </Link>
 
-        <a
+        <TrackedWhatsAppLink
           href={whatsappHref}
-          target="_blank"
-          rel="noopener noreferrer"
+          label="Imovel Not Found WhatsApp"
           className="inline-flex items-center gap-2 rounded-lg bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
         >
           <MessageCircle className="h-4 w-4" />
           <span>Pedir opções no WhatsApp</span>
-        </a>
+        </TrackedWhatsAppLink>
       </div>
     </main>
   );
