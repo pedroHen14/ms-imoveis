@@ -14,6 +14,7 @@
 * Formate valores monetários em `pt-BR` (`R$ 300.000`) e telefones no padrão brasileiro `(11) 96633-2122`.
 * Todos os textos da interface, mensagens de erro, labels e placeholders devem estar em **Português do Brasil (pt-BR)**.
 * Gere `slug` SEO-friendly automaticamente (ex: `casa-condominio-terra-nobre-cotia-101`).
+* **Descrições de Imóveis (Markdown & SEO):** O campo `description` suporta Markdown limpo (parágrafos, subtítulos `###`, listas `-` e `**negrito**`), renderizado em HTML semântico no servidor (sem HTML bruto / sem `dangerouslySetInnerHTML`). Mapeie subtítulos para `<h3>`/`<h4>` para preservar a hierarquia `h1 → h2 → h3` da página. Nunca exponha Markdown bruto em `generateMetadata`/Open Graph, e mantenha os textos gerados para OLX e Facebook Marketplace em texto puro (sem sintaxe Markdown).
 
 ## 3. Segurança e Banco de Dados (CRÍTICO)
 * **RLS (Row Level Security) obrigatório em todas as tabelas:**

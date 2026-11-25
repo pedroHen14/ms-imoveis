@@ -1,12 +1,39 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Loader2, Save } from "lucide-react";
-import type { Owner, Property } from "@/types/database";
+import type {
+  Owner,
+  Property,
+  PropertyPurpose,
+  PropertyType,
+} from "@/types/database";
 import { saveProperty } from "@/app/admin/(panel)/imoveis/actions";
+import type { GenerateAdInput } from "@/app/admin/(panel)/imoveis/ai-actions";
+import { PropertyAdFactory } from "@/components/admin/PropertyAdFactory";
 import { PropertyPhotoManager } from "@/components/admin/PropertyPhotoManager";
+
+function parseFormNumber(raw: FormDataEntryValue | null): number | null {
+  if (raw === null) return null;
+  const text = raw.toString().trim();
+  if (!text) return null;
+  const normalized =
+    text.includes(",") && text.includes(".")
+      ? text.replace(/\./g, "").replace(",", ".")
+      : text.includes(",")
+        ? text.replace(",", ".")
+        : text;
+  const num = Number(normalized);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+function parseFormInt(raw: FormDataEntryValue | null): number {
+  if (raw === null) return 0;
+  const num = Number.parseInt(raw.toString().trim(), 10);
+  return Number.isFinite(num) && num >= 0 ? num : 0;
+}
 
 interface PropertyFormProps {
   property?: Property | null;
@@ -20,7 +47,11 @@ export function PropertyForm({
   owners,
 }: PropertyFormProps) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [images, setImages] = useState<string[]>(initialImages);
+  const [description, setDescription] = useState<string>(
+    property?.description ?? "",
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -28,6 +59,29 @@ export function PropertyForm({
     if (property?.id) return property.id;
     return `new-${Date.now().toString(36)}`;
   }, [property?.id]);
+
+  function getFormSnapshot(): GenerateAdInput {
+    const fd = formRef.current ? new FormData(formRef.current) : new FormData();
+    return {
+      title: fd.get("title")?.toString().trim() ?? "",
+      type: (fd.get("type")?.toString() as PropertyType) || "casa",
+      purpose: (fd.get("purpose")?.toString() as PropertyPurpose) || "venda",
+      price: parseFormNumber(fd.get("price")),
+      condo_fee: parseFormNumber(fd.get("condo_fee")),
+      iptu: parseFormNumber(fd.get("iptu")),
+      area_total: parseFormNumber(fd.get("area_total")),
+      area_built: parseFormNumber(fd.get("area_built")),
+      bedrooms: parseFormInt(fd.get("bedrooms")),
+      suites: parseFormInt(fd.get("suites")),
+      bathrooms: parseFormInt(fd.get("bathrooms")),
+      parking: parseFormInt(fd.get("parking")),
+      condominium: fd.get("condominium")?.toString().trim() || null,
+      neighborhood: fd.get("neighborhood")?.toString().trim() || null,
+      city: fd.get("city")?.toString().trim() || "Cotia",
+      address: fd.get("address")?.toString().trim() || null,
+      notes: description.trim() || null,
+    };
+  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +103,7 @@ export function PropertyForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
       {property?.id ? (
         <input type="hidden" name="id" value={property.id} />
       ) : null}
@@ -433,23 +487,31 @@ export function PropertyForm({
         </div>
       </section>
 
-      {/* Seção 5: Descrição */}
+      {/* Seção 5: Descrição e Fábrica de Anúncios (IA) */}
       <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-serif text-lg font-semibold text-foreground">
-            5. Descrição do Imóvel
-          </h2>
-          <span className="text-xs text-muted">
-            Geração de textos com IA (Site, OLX e Marketplace) chegará no Bloco 4.
-          </span>
+          <div>
+            <h2 className="font-serif text-lg font-semibold text-foreground">
+              5. Descrição do Imóvel
+            </h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Escreva manualmente ou use a IA abaixo para gerar textos para o Site, OLX e Marketplace.
+            </p>
+          </div>
         </div>
         <textarea
           id="description"
           name="description"
           rows={6}
-          defaultValue={property?.description ?? ""}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           placeholder="Descreva os diferenciais do imóvel, acabamento, lazer do condomínio e facilidades da região..."
           className="mt-4 w-full rounded-lg border border-border px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+
+        <PropertyAdFactory
+          getFormSnapshot={getFormSnapshot}
+          onApplySiteDescription={(text) => setDescription(text)}
         />
       </section>
 

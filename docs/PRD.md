@@ -71,9 +71,9 @@ Visual moderno, acolhedor e acessível para o público médio que busca qualidad
 * **Fábrica de Anúncios (IA Integrada):**
   * Botão **"Gerar Textos com IA"** dentro do cadastro/edição do imóvel.
   * Gera automaticamente 3 variações com botões individuais de **"Copiar"**:
-    1. **Descrição para o Site:** Completa, organizada e persuasiva.
-    2. **Texto para OLX:** Objetivo, com bullets e principais atributos em destaque.
-    3. **Texto para Facebook Marketplace:** Curto, direto e com chamada para ação no WhatsApp.
+    1. **Descrição para o Site:** Completa, organizada em Markdown limpo (`###` para subtítulos, listas `-` e **negrito** pontual), renderizada em HTML semântico respeitando a hierarquia de SEO (`h1 → h2 → h3`).
+    2. **Texto para OLX:** Texto puro (sem Markdown), objetivo, com bullets (`•`) e principais atributos em destaque.
+    3. **Texto para Facebook Marketplace:** Texto puro (sem Markdown), curto, direto e com chamada para ação no WhatsApp.
 * **Cadastro de Proprietários (`owners`):**
   * Área privada vinculada a cada imóvel (Nome, Telefone, Observações). Nunca exposta publicamente.
 * **Mini-CRM de Leads (`leads`):**

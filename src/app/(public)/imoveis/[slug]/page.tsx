@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LeadForm } from "@/components/public/LeadForm";
 import { PropertyCard } from "@/components/public/PropertyCard";
+import { PropertyDescription } from "@/components/public/PropertyDescription";
 import { PropertyGallery } from "@/components/public/PropertyGallery";
 import {
   BROKER_INFO,
@@ -291,9 +292,7 @@ export default async function PropertyDetailPage({
               <h2 className="font-serif text-2xl font-semibold text-primary">
                 Sobre este imóvel
               </h2>
-              <div className="mt-4 whitespace-pre-line text-sm leading-relaxed text-muted sm:text-base">
-                {property.description}
-              </div>
+              <PropertyDescription content={property.description} />
             </section>
           )}
 
