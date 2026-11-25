@@ -4,7 +4,7 @@ import { BROKER_INFO } from "@/lib/format";
 import { LoginForm } from "@/components/admin/LoginForm";
 
 export const metadata = {
-  title: `Acesso do Corretor | ${BROKER_INFO.brandName}`,
+  title: "Acesso do Corretor",
   robots: { index: false, follow: false },
 };
 

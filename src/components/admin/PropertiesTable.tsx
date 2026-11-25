@@ -183,20 +183,20 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3.5">Imóvel</th>
-                  <th className="px-4 py-3.5">Tipo / Finalidade</th>
-                  <th className="px-4 py-3.5">Valor</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5 text-center">Destaque</th>
-                  <th className="px-5 py-3.5 text-right">Ações</th>
+                  <th className="px-4 py-3.5">Imóvel</th>
+                  <th className="px-3 py-3.5">Tipo / Finalidade</th>
+                  <th className="px-3 py-3.5">Valor</th>
+                  <th className="px-3 py-3.5">Status</th>
+                  <th className="px-3 py-3.5 text-center">Destaque</th>
+                  <th className="px-4 py-3.5 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((property) => (
                   <tr key={property.id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3.5">
-                        <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-border bg-slate-100">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-slate-100">
                           {property.coverUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -210,13 +210,14 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
                             </div>
                           )}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs text-muted">
+                        <div className="min-w-0 max-w-[240px] xl:max-w-[300px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="shrink-0 font-mono text-xs text-muted">
                               #{property.code}
                             </span>
                             <Link
                               href={`/admin/imoveis/${property.id}/editar`}
+                              title={property.title}
                               className="truncate font-medium text-foreground hover:text-primary hover:underline"
                             >
                               {property.title}
@@ -235,17 +236,17 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
                       </div>
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3.5 text-muted">
+                    <td className="whitespace-nowrap px-3 py-3 text-muted">
                       {PROPERTY_TYPE_LABELS[property.type] ?? property.type} •{" "}
                       {PROPERTY_PURPOSE_LABELS[property.purpose] ??
                         property.purpose}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-foreground">
+                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-foreground">
                       {formatCurrency(property.price)}
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3.5">
+                    <td className="whitespace-nowrap px-3 py-3">
                       <select
                         value={property.status}
                         disabled={isPending}
@@ -268,7 +269,7 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
                       </select>
                     </td>
 
-                    <td className="whitespace-nowrap px-4 py-3.5 text-center">
+                    <td className="whitespace-nowrap px-3 py-3 text-center">
                       <button
                         type="button"
                         disabled={isPending}
@@ -295,7 +296,7 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
                       </button>
                     </td>
 
-                    <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1.5">
                         {property.status === "disponivel" ? (
                           <Link
@@ -319,10 +320,11 @@ export function PropertiesTable({ properties }: PropertiesTableProps) {
                           type="button"
                           disabled={isPending}
                           onClick={() => handleDelete(property)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-red-700 transition hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
+                          title="Excluir imóvel"
+                          aria-label={`Excluir imóvel ${property.code}`}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-red-700 transition hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          Excluir
                         </button>
                       </div>
                     </td>

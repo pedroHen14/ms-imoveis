@@ -4,7 +4,7 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { BROKER_INFO } from "@/lib/format";
 
 export const metadata: Metadata = {
-  title: `Painel Admin | ${BROKER_INFO.brandName}`,
+  title: "Painel Admin",
   robots: { index: false, follow: false },
 };
 

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
+import { Search, SlidersHorizontal } from "lucide-react";
 
 export const PRICE_RANGES = [
   { value: "", label: "Qualquer valor" },
@@ -98,7 +98,7 @@ export function PropertySearchBar({
   const inputBaseClass =
     "h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground transition-colors focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/15";
 
-  const selectBaseClass = `${inputBaseClass} appearance-none cursor-pointer pr-10`;
+  const selectBaseClass = `${inputBaseClass} cursor-pointer pr-8`;
 
   return (
     <form
@@ -116,19 +116,16 @@ export function PropertySearchBar({
           >
             Finalidade
           </label>
-          <div className="relative">
-            <select
-              id={`purpose-${variant}`}
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              className={selectBaseClass}
-            >
-              <option value="">Todas</option>
-              <option value="venda">Venda</option>
-              <option value="locacao">Locação</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          </div>
+          <select
+            id={`purpose-${variant}`}
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            className={selectBaseClass}
+          >
+            <option value="">Todas</option>
+            <option value="venda">Venda</option>
+            <option value="locacao">Locação</option>
+          </select>
         </div>
 
         {/* Tipo */}
@@ -139,21 +136,18 @@ export function PropertySearchBar({
           >
             Tipo
           </label>
-          <div className="relative">
-            <select
-              id={`type-${variant}`}
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className={selectBaseClass}
-            >
-              <option value="">Todos</option>
-              <option value="casa">Casa</option>
-              <option value="apartamento">Apartamento</option>
-              <option value="terreno">Terreno</option>
-              <option value="comercial">Comercial</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          </div>
+          <select
+            id={`type-${variant}`}
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className={selectBaseClass}
+          >
+            <option value="">Todos</option>
+            <option value="casa">Casa</option>
+            <option value="apartamento">Apartamento</option>
+            <option value="terreno">Terreno</option>
+            <option value="comercial">Comercial</option>
+          </select>
         </div>
 
         {/* Bairro ou Condomínio */}
@@ -190,21 +184,18 @@ export function PropertySearchBar({
           >
             Faixa de Preço
           </label>
-          <div className="relative">
-            <select
-              id={`price-${variant}`}
-              value={priceRange}
-              onChange={(e) => setPriceRange(e.target.value)}
-              className={selectBaseClass}
-            >
-              {PRICE_RANGES.map((range) => (
-                <option key={range.value || "all"} value={range.value}>
-                  {range.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          </div>
+          <select
+            id={`price-${variant}`}
+            value={priceRange}
+            onChange={(e) => setPriceRange(e.target.value)}
+            className={selectBaseClass}
+          >
+            {PRICE_RANGES.map((range) => (
+              <option key={range.value || "all"} value={range.value}>
+                {range.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Botão Buscar */}

@@ -27,7 +27,7 @@ export function Header() {
         {/* Marca + CRECI */}
         <Link
           href="/"
-          className="group flex items-center gap-3 focus:outline-none"
+          className="group flex min-w-0 flex-1 items-center gap-2.5 focus:outline-none sm:gap-3 md:flex-none"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-white shadow-sm transition-colors group-hover:bg-primary-hover">
@@ -37,7 +37,7 @@ export function Header() {
             <span className="block truncate font-serif text-base font-semibold leading-tight text-primary sm:text-lg">
               {BROKER_INFO.brandName}
             </span>
-            <span className="block text-xs font-medium tracking-wide text-muted">
+            <span className="block truncate text-xs font-medium tracking-wide text-muted">
               CRECI {BROKER_INFO.creci} • Cotia e Granja Vianna
             </span>
           </div>
@@ -91,7 +91,7 @@ export function Header() {
           onClick={() => setMobileMenuOpen((prev) => !prev)}
           aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"}
           aria-expanded={mobileMenuOpen}
-          className="inline-flex items-center justify-center rounded-lg border border-border p-2 text-primary transition-colors hover:bg-background md:hidden"
+          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border p-2 text-primary transition-colors hover:bg-background md:hidden"
         >
           {mobileMenuOpen ? (
             <X className="h-5 w-5" />
