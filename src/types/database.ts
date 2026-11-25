@@ -25,7 +25,7 @@ export type LeadStatus =
 
 /**
  * Colunas públicas da tabela `properties`.
- * NUNCA incluir `owner_id` em queries acessíveis ao público.
+ * NUNCA incluir `owner_id` ou `ai_notes` em queries acessíveis ao público.
  */
 export const PUBLIC_PROPERTY_COLUMNS = [
   "id",
@@ -113,6 +113,7 @@ export type Database = {
           city: string;
           address: string | null;
           description: string | null;
+          ai_notes: string | null;
           status: PropertyStatus;
           is_featured: boolean;
           owner_id: string | null;
@@ -140,6 +141,7 @@ export type Database = {
           city?: string;
           address?: string | null;
           description?: string | null;
+          ai_notes?: string | null;
           status?: PropertyStatus;
           is_featured?: boolean;
           owner_id?: string | null;
@@ -167,6 +169,7 @@ export type Database = {
           city?: string;
           address?: string | null;
           description?: string | null;
+          ai_notes?: string | null;
           status?: PropertyStatus;
           is_featured?: boolean;
           owner_id?: string | null;
@@ -262,12 +265,140 @@ export type Database = {
           },
         ];
       };
+      whatsapp_sessions: {
+        Row: {
+          phone: string;
+          lead_id: string | null;
+          bot_paused_until: string | null;
+          last_interaction_at: string;
+          created_at: string;
+        };
+        Insert: {
+          phone: string;
+          lead_id?: string | null;
+          bot_paused_until?: string | null;
+          last_interaction_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          phone?: string;
+          lead_id?: string | null;
+          bot_paused_until?: string | null;
+          last_interaction_at?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_sessions_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "leads";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      search_properties_for_ai: {
+        Args: {
+          p_purpose?: string | null;
+          p_type?: string | null;
+          p_location?: string | null;
+          p_max_price?: number | null;
+          p_min_bedrooms?: number | null;
+        };
+        Returns: {
+          id: string;
+          code: number;
+          slug: string;
+          title: string;
+          type: PropertyType;
+          purpose: PropertyPurpose;
+          price: number | null;
+          condo_fee: number | null;
+          iptu: number | null;
+          area_total: number | null;
+          area_built: number | null;
+          bedrooms: number;
+          suites: number;
+          bathrooms: number;
+          parking: number;
+          condominium: string | null;
+          neighborhood: string | null;
+          city: string;
+          description_summary: string | null;
+          ai_notes: string | null;
+          is_featured: boolean;
+        }[];
+      };
+      get_property_by_code_or_slug: {
+        Args: {
+          p_query: string;
+        };
+        Returns: {
+          id: string;
+          code: number;
+          slug: string;
+          title: string;
+          type: PropertyType;
+          purpose: PropertyPurpose;
+          price: number | null;
+          condo_fee: number | null;
+          iptu: number | null;
+          area_total: number | null;
+          area_built: number | null;
+          bedrooms: number;
+          suites: number;
+          bathrooms: number;
+          parking: number;
+          condominium: string | null;
+          neighborhood: string | null;
+          city: string;
+          address: string | null;
+          description: string | null;
+          ai_notes: string | null;
+          status: PropertyStatus;
+          is_featured: boolean;
+          cover_image_url: string | null;
+        }[];
+      };
+      upsert_whatsapp_lead: {
+        Args: {
+          p_phone: string;
+          p_name?: string | null;
+          p_notes?: string | null;
+          p_property_id?: string | null;
+        };
+        Returns: {
+          lead_id: string;
+          phone: string;
+          is_new: boolean;
+          status: LeadStatus;
+        }[];
+      };
+      get_stale_leads_for_followup: {
+        Args: {
+          p_days?: number;
+        };
+        Returns: {
+          id: string;
+          name: string;
+          phone: string;
+          email: string | null;
+          source: LeadSource;
+          status: LeadStatus;
+          notes: string | null;
+          last_contact_at: string;
+          days_without_contact: number;
+          property_id: string | null;
+          property_code: number | null;
+          property_title: string | null;
+          property_slug: string | null;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;
@@ -280,7 +411,11 @@ export type Database = {
 
 export type Owner = Database["public"]["Tables"]["owners"]["Row"];
 export type Property = Database["public"]["Tables"]["properties"]["Row"];
-export type PublicProperty = Omit<Property, "owner_id">;
+export type PublicProperty = Omit<Property, "owner_id" | "ai_notes">;
 export type PropertyImage =
   Database["public"]["Tables"]["property_images"]["Row"];
 export type Lead = Database["public"]["Tables"]["leads"]["Row"];
+export type WhatsappSession =
+  Database["public"]["Tables"]["whatsapp_sessions"]["Row"];
+export type StaleLeadFollowupRow =
+  Database["public"]["Functions"]["get_stale_leads_for_followup"]["Returns"][number];
