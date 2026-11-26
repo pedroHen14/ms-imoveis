@@ -1,6 +1,8 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { formatPhoneBR } from "@/lib/format";
+import { formatPhoneBR, normalizePhoneE164 } from "@/lib/format";
+import { getSiteUrl } from "@/lib/seo";
+import { LEAD_STATUS_LABELS } from "@/lib/status-badges";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { LeadStatus, StaleLeadFollowupRow } from "@/types/database";
 
@@ -8,15 +10,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DEFAULT_FOLLOWUP_DAYS = 3;
-
-const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
-  novo: "Novo",
-  em_contato: "Em contato",
-  visita: "Visita",
-  proposta: "Proposta",
-  fechado: "Fechado",
-  perdido: "Perdido",
-};
+const PLACEHOLDER_CRON_SECRET = "defina-um-segredo-aleatorio-seguro";
+const MIN_CRON_SECRET_LENGTH = 24;
 
 interface FollowupLeadItem {
   id: string;
@@ -43,23 +38,15 @@ function isValidBearerToken(authHeader: string | null, expectedSecret: string): 
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return false;
 
-  const provided = Buffer.from(match[1].trim(), "utf8");
-  const expected = Buffer.from(expectedSecret, "utf8");
+  // Compara hashes SHA-256 de tamanho fixo para eliminar vazamento de comprimento por timing
+  const providedHash = createHash("sha256")
+    .update(match[1].trim(), "utf8")
+    .digest();
+  const expectedHash = createHash("sha256")
+    .update(expectedSecret, "utf8")
+    .digest();
 
-  if (provided.length !== expected.length) {
-    return false;
-  }
-
-  return timingSafeEqual(provided, expected);
-}
-
-function normalizePhoneE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.length === 10 || digits.length === 11) {
-    return `55${digits}`;
-  }
-  return digits;
+  return timingSafeEqual(providedHash, expectedHash);
 }
 
 function formatDaysLabel(days: number): string {
@@ -76,10 +63,7 @@ function buildPropertyLabel(row: StaleLeadFollowupRow): string | null {
 }
 
 function buildAdminLeadsUrl(): string {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ||
-    "http://localhost:3000";
-  return `${baseUrl}/admin/leads`;
+  return `${getSiteUrl()}/admin/leads`;
 }
 
 function buildTopLeadsInline(leads: FollowupLeadItem[], limit = 5): string {
@@ -142,16 +126,23 @@ function jsonNoStore(body: unknown, status = 200) {
     status,
     headers: {
       "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
     },
   });
 }
 
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET?.trim();
-  if (!cronSecret) {
-    console.error("[/api/cron/followup] Variável CRON_SECRET não configurada.");
+  if (
+    !cronSecret ||
+    cronSecret === PLACEHOLDER_CRON_SECRET ||
+    cronSecret.length < MIN_CRON_SECRET_LENGTH
+  ) {
+    console.error(
+      "[/api/cron/followup] Variável CRON_SECRET ausente, fraca ou com valor placeholder.",
+    );
     return jsonNoStore(
-      { error: "Endpoint de follow-up não configurado no servidor." },
+      { error: "Endpoint de follow-up não configurado com segurança no servidor." },
       500,
     );
   }

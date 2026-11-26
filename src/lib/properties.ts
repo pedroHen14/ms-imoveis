@@ -1,4 +1,9 @@
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
+import {
+  createClient as createSupabaseClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 import { getSupabasePublicEnv } from "@/lib/supabase/env";
 import {
   PUBLIC_PROPERTY_SELECT,
@@ -9,10 +14,28 @@ import {
   type PublicProperty,
 } from "@/types/database";
 
-function createPublicClient() {
+export const PROPERTIES_CACHE_TAG = "properties";
+
+let cachedPublicClient: SupabaseClient<Database> | null = null;
+let cachedPublicClientKey: string | null = null;
+
+function createPublicClient(): SupabaseClient<Database> | null {
   const env = getSupabasePublicEnv();
   if (!env) return null;
-  return createSupabaseClient<Database>(env.url, env.anonKey);
+
+  const cacheKey = `${env.url}::${env.anonKey}`;
+  if (cachedPublicClient && cachedPublicClientKey === cacheKey) {
+    return cachedPublicClient;
+  }
+
+  cachedPublicClient = createSupabaseClient<Database>(env.url, env.anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  cachedPublicClientKey = cacheKey;
+  return cachedPublicClient;
 }
 
 export interface PublicPropertyWithImages extends PublicProperty {
@@ -38,6 +61,7 @@ export interface PaginatedPropertiesResult {
   page: number;
   pageSize: number;
   totalPages: number;
+  hasError?: boolean;
 }
 
 const PROPERTY_WITH_IMAGES_SELECT = `${PUBLIC_PROPERTY_SELECT}, property_images ( id, property_id, url, position, created_at )`;
@@ -66,7 +90,11 @@ export function getCoverImageUrl(
 }
 
 function sanitizeSearchFilter(value: string): string {
-  return value.replace(/[%_,()]/g, " ").trim();
+  return value
+    .replace(/[%_*,"'\\()[\]{}\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 export async function getFeaturedProperties(
@@ -122,8 +150,8 @@ export async function getFeaturedProperties(
 export async function getFilteredProperties(
   params: PropertyFilterParams,
 ): Promise<PaginatedPropertiesResult> {
-  const pageSize = params.pageSize ?? 12;
-  const page = Math.max(1, params.page ?? 1);
+  const pageSize = Math.min(48, Math.max(1, params.pageSize ?? 12));
+  const page = Math.min(500, Math.max(1, params.page ?? 1));
 
   const supabase = createPublicClient();
   if (!supabase) {
@@ -136,7 +164,80 @@ export async function getFilteredProperties(
     };
   }
 
+  const cleanedLocation = params.location
+    ? sanitizeSearchFilter(params.location)
+    : "";
+  const minPrice =
+    typeof params.minPrice === "number" && !Number.isNaN(params.minPrice)
+      ? params.minPrice
+      : null;
+  const maxPrice =
+    typeof params.maxPrice === "number" && !Number.isNaN(params.maxPrice)
+      ? params.maxPrice
+      : null;
+
   try {
+    // Usa RPC `search_public_properties` (Migration 004) com `unaccent` + índice GIN trigram.
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "search_public_properties",
+      {
+        p_purpose: params.purpose ?? null,
+        p_type: params.type ?? null,
+        p_location: cleanedLocation || null,
+        p_min_price: minPrice,
+        p_max_price: maxPrice,
+        p_sort: params.sort ?? "recentes",
+        p_page: page,
+        p_page_size: pageSize,
+      },
+    );
+
+    if (!rpcError) {
+      const rows = rpcData ?? [];
+      const total = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+      const totalPages = Math.ceil(total / pageSize);
+
+      const properties: PublicPropertyWithImages[] = rows.map((row) => {
+        const rawImages = Array.isArray(row.property_images)
+          ? (row.property_images as unknown as PropertyImage[])
+          : [];
+        const { total_count: _totalCount, ...rest } = row;
+        void _totalCount;
+        return {
+          ...rest,
+          property_images: rawImages,
+        };
+      });
+
+      return {
+        properties: sortPropertyImages(properties),
+        total,
+        page,
+        pageSize,
+        totalPages,
+      };
+    }
+
+    const isMissingRpc =
+      rpcError.code === "PGRST202" ||
+      rpcError.message.toLowerCase().includes("search_public_properties");
+
+    if (!isMissingRpc) {
+      console.error("Erro ao listar imóveis via RPC:", rpcError.message);
+      return {
+        properties: [],
+        total: 0,
+        page,
+        pageSize,
+        totalPages: 0,
+        hasError: true,
+      };
+    }
+
+    console.warn(
+      "[getFilteredProperties] RPC search_public_properties não encontrada; usando consulta padrão até aplicar a Migration 004.",
+    );
+
     let query = supabase
       .from("properties")
       .select(PROPERTY_WITH_IMAGES_SELECT, { count: "exact" })
@@ -150,21 +251,18 @@ export async function getFilteredProperties(
       query = query.eq("type", params.type);
     }
 
-    if (params.location) {
-      const cleaned = sanitizeSearchFilter(params.location);
-      if (cleaned.length > 0) {
-        query = query.or(
-          `condominium.ilike.%${cleaned}%,neighborhood.ilike.%${cleaned}%,city.ilike.%${cleaned}%,title.ilike.%${cleaned}%`,
-        );
-      }
+    if (cleanedLocation.length > 0) {
+      query = query.or(
+        `condominium.ilike.%${cleanedLocation}%,neighborhood.ilike.%${cleanedLocation}%,city.ilike.%${cleanedLocation}%,title.ilike.%${cleanedLocation}%`,
+      );
     }
 
-    if (typeof params.minPrice === "number" && !Number.isNaN(params.minPrice)) {
-      query = query.gte("price", params.minPrice);
+    if (minPrice !== null) {
+      query = query.gte("price", minPrice);
     }
 
-    if (typeof params.maxPrice === "number" && !Number.isNaN(params.maxPrice)) {
-      query = query.lte("price", params.maxPrice);
+    if (maxPrice !== null) {
+      query = query.lte("price", maxPrice);
     }
 
     switch (params.sort) {
@@ -200,6 +298,7 @@ export async function getFilteredProperties(
         page,
         pageSize,
         totalPages: 0,
+        hasError: true,
       };
     }
 
@@ -223,6 +322,7 @@ export async function getFilteredProperties(
       page,
       pageSize,
       totalPages: 0,
+      hasError: true,
     };
   }
 }
@@ -233,32 +333,37 @@ export interface ActiveCondominium {
   neighborhood: string | null;
 }
 
-export async function getActiveCondominiums(
-  limit = 12,
-): Promise<ActiveCondominium[]> {
+interface AvailableLocationsIndex {
+  condominiums: ActiveCondominium[];
+  locations: string[];
+}
+
+async function fetchAvailableLocationsIndex(): Promise<AvailableLocationsIndex> {
   const supabase = createPublicClient();
   if (!supabase) {
-    return [];
+    return { condominiums: [], locations: [] };
   }
 
-  try {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("condominium, neighborhood")
-      .eq("status", "disponivel")
-      .not("condominium", "is", null);
+  const { data, error } = await supabase
+    .from("properties")
+    .select("condominium, neighborhood")
+    .eq("status", "disponivel");
 
-    if (error || !data) {
-      return [];
-    }
+  if (error) {
+    throw new Error(error.message);
+  }
 
-    const grouped = new Map<string, ActiveCondominium>();
+  const grouped = new Map<string, ActiveCondominium>();
+  const locationSet = new Set<string>();
 
-    for (const row of data) {
-      const name = row.condominium?.trim();
-      if (!name) continue;
+  for (const row of data ?? []) {
+    const condoName = row.condominium?.trim();
+    const neighborhood = row.neighborhood?.trim() || null;
 
-      const key = name
+    if (condoName) {
+      locationSet.add(condoName);
+
+      const key = condoName
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase();
@@ -266,58 +371,72 @@ export async function getActiveCondominiums(
       const existing = grouped.get(key);
       if (existing) {
         existing.count += 1;
-        if (!existing.neighborhood && row.neighborhood?.trim()) {
-          existing.neighborhood = row.neighborhood.trim();
+        if (!existing.neighborhood && neighborhood) {
+          existing.neighborhood = neighborhood;
         }
       } else {
         grouped.set(key, {
-          name,
+          name: condoName,
           count: 1,
-          neighborhood: row.neighborhood?.trim() || null,
+          neighborhood,
         });
       }
     }
 
-    return Array.from(grouped.values())
-      .sort((a, b) => {
-        if (b.count !== a.count) return b.count - a.count;
-        return a.name.localeCompare(b.name, "pt-BR");
-      })
-      .slice(0, limit);
-  } catch {
-    return [];
+    if (neighborhood) {
+      locationSet.add(neighborhood);
+    }
   }
+
+  const condominiums = Array.from(grouped.values()).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+
+  const locations = Array.from(locationSet).sort((a, b) =>
+    a.localeCompare(b, "pt-BR"),
+  );
+
+  return { condominiums, locations };
+}
+
+const getCachedAvailableLocationsIndex = unstable_cache(
+  fetchAvailableLocationsIndex,
+  ["available-property-locations-v1"],
+  {
+    revalidate: 60,
+    tags: [PROPERTIES_CACHE_TAG],
+  },
+);
+
+const getAvailableLocationsIndex = cache(
+  async (): Promise<AvailableLocationsIndex> => {
+    if (!getSupabasePublicEnv()) {
+      return { condominiums: [], locations: [] };
+    }
+
+    try {
+      return await getCachedAvailableLocationsIndex();
+    } catch (err) {
+      console.error("Erro ao consultar localizações disponíveis:", err);
+      return { condominiums: [], locations: [] };
+    }
+  },
+);
+
+export async function getActiveCondominiums(
+  limit = 12,
+): Promise<ActiveCondominium[]> {
+  const { condominiums } = await getAvailableLocationsIndex();
+  return condominiums.slice(0, limit);
 }
 
 export async function getAvailableLocations(): Promise<string[]> {
-  const supabase = createPublicClient();
-  if (!supabase) {
-    return [];
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("condominium, neighborhood")
-      .eq("status", "disponivel");
-
-    if (error || !data) {
-      return [];
-    }
-
-    const set = new Set<string>();
-    for (const row of data) {
-      if (row.condominium?.trim()) set.add(row.condominium.trim());
-      if (row.neighborhood?.trim()) set.add(row.neighborhood.trim());
-    }
-
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  } catch {
-    return [];
-  }
+  const { locations } = await getAvailableLocationsIndex();
+  return locations;
 }
 
-export async function getPropertyBySlug(
+export const getPropertyBySlug = cache(async function getPropertyBySlug(
   slug: string,
 ): Promise<PublicPropertyWithImages | null> {
   const supabase = createPublicClient();
@@ -345,7 +464,37 @@ export async function getPropertyBySlug(
     console.error("Erro ao buscar imóvel por slug:", err);
     return null;
   }
-}
+});
+
+export const getPropertySlugByCode = cache(async function getPropertySlugByCode(
+  code: number,
+): Promise<string | null> {
+  if (!Number.isInteger(code) || code <= 0) {
+    return null;
+  }
+
+  const supabase = createPublicClient();
+  if (!supabase) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("properties")
+      .select("slug")
+      .eq("code", code)
+      .eq("status", "disponivel")
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data.slug;
+  } catch {
+    return null;
+  }
+});
 
 export async function getRelatedProperties(
   property: Pick<PublicProperty, "id" | "purpose" | "type">,
@@ -382,14 +531,13 @@ export async function getRelatedProperties(
 export async function getAllAvailablePropertySlugs(): Promise<
   Array<{ slug: string; updated_at: string }>
 > {
-  const env = getSupabasePublicEnv();
-  if (!env) {
+  const supabase = createPublicClient();
+  if (!supabase) {
     return [];
   }
 
   try {
     // Cliente stateless sem cookies para compatibilidade com sitemap.ts
-    const supabase = createSupabaseClient<Database>(env.url, env.anonKey);
     const { data, error } = await supabase
       .from("properties")
       .select("slug, updated_at")

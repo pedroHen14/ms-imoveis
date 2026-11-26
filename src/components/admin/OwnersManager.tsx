@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Building2,
   Loader2,
@@ -17,6 +18,7 @@ import {
   deleteOwner,
   saveOwner,
 } from "@/app/admin/(panel)/proprietarios/actions";
+import { AdminPagination } from "@/components/admin/AdminPagination";
 
 export interface OwnerWithCount extends Owner {
   propertyCount: number;
@@ -24,10 +26,24 @@ export interface OwnerWithCount extends Owner {
 
 interface OwnersManagerProps {
   owners: OwnerWithCount[];
+  hasAnyOwner: boolean;
+  initialQuery: string;
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
 }
 
-export function OwnersManager({ owners }: OwnersManagerProps) {
-  const [query, setQuery] = useState("");
+export function OwnersManager({
+  owners,
+  hasAnyOwner,
+  initialQuery,
+  pagination,
+}: OwnersManagerProps) {
+  const router = useRouter();
+  const [queryInput, setQueryInput] = useState(initialQuery);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingOwner, setEditingOwner] = useState<OwnerWithCount | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -35,17 +51,49 @@ export function OwnersManager({ owners }: OwnersManagerProps) {
     text: string;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const isFirstRenderRef = useRef(true);
 
-  const filteredOwners = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return owners;
-    return owners.filter(
-      (owner) =>
-        owner.name.toLowerCase().includes(q) ||
-        (owner.phone ?? "").toLowerCase().includes(q) ||
-        (owner.notes ?? "").toLowerCase().includes(q),
-    );
-  }, [owners, query]);
+  useEffect(() => {
+    setQueryInput(initialQuery);
+  }, [initialQuery]);
+
+  function navigateWithFilters(next: { q?: string; page?: number }) {
+    const q = (next.q ?? queryInput).trim();
+    const page = next.page ?? 1;
+
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (page > 1) params.set("page", String(page));
+
+    const qs = params.toString();
+    router.replace(qs ? `/admin/proprietarios?${qs}` : "/admin/proprietarios", {
+      scroll: false,
+    });
+  }
+
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    if (queryInput.trim() === initialQuery.trim()) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      const trimmed = queryInput.trim();
+      if (trimmed) params.set("q", trimmed);
+      const qs = params.toString();
+      router.replace(
+        qs ? `/admin/proprietarios?${qs}` : "/admin/proprietarios",
+        { scroll: false },
+      );
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [queryInput, initialQuery, router]);
 
   function openNewModal() {
     setEditingOwner(null);
@@ -116,8 +164,8 @@ export function OwnersManager({ owners }: OwnersManagerProps) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={queryInput}
+            onChange={(e) => setQueryInput(e.target.value)}
             placeholder="Buscar por nome, telefone ou observação..."
             className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
@@ -157,14 +205,14 @@ export function OwnersManager({ owners }: OwnersManagerProps) {
 
       {/* Tabela */}
       <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-        {filteredOwners.length === 0 ? (
+        {owners.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-sm text-muted">
-              {owners.length === 0
+              {!hasAnyOwner
                 ? "Nenhum proprietário cadastrado ainda."
                 : "Nenhum proprietário encontrado com essa busca."}
             </p>
-            {owners.length === 0 ? (
+            {!hasAnyOwner ? (
               <button
                 type="button"
                 onClick={openNewModal}
@@ -176,19 +224,20 @@ export function OwnersManager({ owners }: OwnersManagerProps) {
             ) : null}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <th className="px-6 py-3.5">Nome</th>
-                  <th className="px-6 py-3.5">Telefone / WhatsApp</th>
-                  <th className="px-6 py-3.5">Imóveis</th>
-                  <th className="px-6 py-3.5">Observações</th>
-                  <th className="px-6 py-3.5 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredOwners.map((owner) => {
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <th className="px-6 py-3.5">Nome</th>
+                    <th className="px-6 py-3.5">Telefone / WhatsApp</th>
+                    <th className="px-6 py-3.5">Imóveis</th>
+                    <th className="px-6 py-3.5">Observações</th>
+                    <th className="px-6 py-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {owners.map((owner) => {
                   const formattedPhone = formatPhoneBR(owner.phone);
                   const cleanDigits = (owner.phone ?? "").replace(/\D/g, "");
                   const whatsappHref =
@@ -259,9 +308,23 @@ export function OwnersManager({ owners }: OwnersManagerProps) {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+
+            <AdminPagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              pageSize={pagination.pageSize}
+              itemLabelSingular="proprietário"
+              itemLabelPlural="proprietários"
+              disabled={isPending}
+              onPageChange={(nextPage) =>
+                navigateWithFilters({ page: nextPage })
+              }
+            />
+          </>
         )}
       </div>
 

@@ -6,15 +6,13 @@ import { signInAdmin, type LoginFormState } from "@/app/admin/login/actions";
 
 interface LoginFormProps {
   nextPath?: string;
+  initialError?: string;
 }
 
-const initialState: LoginFormState = {};
-
-export function LoginForm({ nextPath }: LoginFormProps) {
-  const [state, formAction, isPending] = useActionState(
-    signInAdmin,
-    initialState,
-  );
+export function LoginForm({ nextPath, initialError }: LoginFormProps) {
+  const [state, formAction, isPending] = useActionState(signInAdmin, {
+    error: initialError,
+  } satisfies LoginFormState);
 
   return (
     <form action={formAction} className="mt-6 space-y-4">
@@ -43,7 +41,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
           type="email"
           autoComplete="email"
           required
-          placeholder="ms.imoveis04@gmail.com"
+          placeholder="corretor@seudominio.com.br"
           className="mt-1.5 w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
         />
       </div>

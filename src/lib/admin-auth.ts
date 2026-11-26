@@ -1,7 +1,13 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
+import { isAuthorizedAdminUser } from "@/lib/admin-auth-check";
 import { createClient } from "@/lib/supabase/server";
 
-export async function requireAdminUser() {
+/**
+ * Memoiza a verificação de sessão administrativa por requisição RSC, evitando
+ * chamadas redundantes a `auth.getUser()` e `is_admin()` entre Layout e Page.
+ */
+const getCachedAdminSession = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -9,22 +15,37 @@ export async function requireAdminUser() {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
+    return { status: "unauthenticated" as const };
+  }
+
+  const isAdmin = await isAuthorizedAdminUser(supabase, user);
+  if (!isAdmin) {
+    return { status: "unauthorized" as const };
+  }
+
+  return { status: "authorized" as const, supabase, user };
+});
+
+export async function requireAdminUser() {
+  const session = await getCachedAdminSession();
+
+  if (session.status === "unauthenticated") {
     redirect("/admin/login");
   }
 
-  return { supabase, user };
+  if (session.status === "unauthorized") {
+    redirect("/admin/login?error=unauthorized");
+  }
+
+  return { supabase: session.supabase, user: session.user };
 }
 
 export async function getAdminUserForAction() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  const session = await getCachedAdminSession();
 
-  if (error || !user) {
+  if (session.status !== "authorized") {
     return null;
   }
 
-  return { supabase, user };
+  return { supabase: session.supabase, user: session.user };
 }

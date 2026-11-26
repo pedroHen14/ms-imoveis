@@ -9,13 +9,17 @@ export const metadata = {
 };
 
 interface AdminLoginPageProps {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }
 
 export default async function AdminLoginPage({
   searchParams,
 }: AdminLoginPageProps) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
+  const initialError =
+    error === "unauthorized"
+      ? "Esta conta não possui permissão para acessar o painel administrativo."
+      : undefined;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-admin-bg px-4 py-12">
@@ -32,7 +36,7 @@ export default async function AdminLoginPage({
           </p>
         </div>
 
-        <LoginForm nextPath={next} />
+        <LoginForm nextPath={next} initialError={initialError} />
 
         <div className="mt-6 border-t border-border pt-5 text-center">
           <Link

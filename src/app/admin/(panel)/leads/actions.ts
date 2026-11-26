@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getAdminUserForAction } from "@/lib/admin-auth";
-import { buildPhoneCandidates } from "@/lib/format";
+import { buildPhoneCandidates, normalizePhoneE164 } from "@/lib/format";
 import type { LeadStatus } from "@/types/database";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -51,7 +51,7 @@ const leadSchema = z.object({
   notes: z
     .string()
     .trim()
-    .max(2000, "As observações podem ter no máximo 2.000 caracteres.")
+    .max(10000, "As observações podem ter no máximo 10.000 caracteres.")
     .optional()
     .or(z.literal("")),
 });
@@ -67,7 +67,6 @@ export interface LeadActionResult {
 const toggleWhatsappAiSchema = z.object({
   leadId: z.string().uuid("Identificador de lead inválido."),
   pause: z.boolean(),
-  sessionPhone: z.string().trim().max(30).nullable().optional(),
 });
 
 type AdminSupabaseClient = NonNullable<
@@ -78,15 +77,8 @@ async function findMatchingWhatsappSessionPhones(
   supabase: AdminSupabaseClient,
   leadId: string,
   leadPhone: string | null | undefined,
-  explicitSessionPhone?: string | null,
 ): Promise<{ phones: string[]; errorMessage?: string }> {
-  const phoneCandidates = Array.from(
-    new Set([
-      ...buildPhoneCandidates(leadPhone),
-      ...buildPhoneCandidates(explicitSessionPhone),
-      ...(explicitSessionPhone?.trim() ? [explicitSessionPhone.trim()] : []),
-    ]),
-  );
+  const phoneCandidates = Array.from(new Set(buildPhoneCandidates(leadPhone)));
 
   const [byLeadResult, byPhoneResult] = await Promise.all([
     supabase
@@ -155,9 +147,11 @@ export async function saveLead(
   const { id, name, phone, email, source, status, property_id, notes } =
     parsed.data;
 
+  const normalizedPhone = normalizePhoneE164(phone) || phone;
+
   const payload = {
     name,
-    phone,
+    phone: normalizedPhone,
     email: email || null,
     source,
     status,
@@ -229,7 +223,6 @@ export async function updateLeadStatus(
 export async function toggleLeadWhatsappAi(input: {
   leadId: string;
   pause: boolean;
-  sessionPhone?: string | null;
 }): Promise<LeadActionResult> {
   const auth = await getAdminUserForAction();
   if (!auth) {
@@ -244,7 +237,7 @@ export async function toggleLeadWhatsappAi(input: {
     };
   }
 
-  const { leadId, pause, sessionPhone } = parsed.data;
+  const { leadId, pause } = parsed.data;
 
   const { data: leadRow, error: leadError } = await auth.supabase
     .from("leads")
@@ -260,7 +253,6 @@ export async function toggleLeadWhatsappAi(input: {
     auth.supabase,
     leadId,
     leadRow.phone,
-    sessionPhone,
   );
 
   if (errorMessage) {

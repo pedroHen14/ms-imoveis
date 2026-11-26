@@ -8,11 +8,10 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Executa o middleware em todas as rotas exceto:
-     * - _next/static (arquivos estáticos)
-     * - _next/image (otimização de imagens)
-     * - favicon.ico e arquivos de mídia públicos
+     * Executa o middleware exclusivamente nas rotas administrativas (/admin).
+     * A vitrine pública e os endpoints de cron não utilizam sessão Supabase Auth.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/admin",
+    "/admin/:path*",
   ],
 };

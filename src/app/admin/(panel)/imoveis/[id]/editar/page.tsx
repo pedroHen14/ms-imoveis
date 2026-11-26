@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin-auth";
 import { PropertyForm } from "@/components/admin/PropertyForm";
 
@@ -12,15 +13,20 @@ export default async function EditPropertyPage({
   params,
 }: EditPropertyPageProps) {
   const { id } = await params;
+  const parsedId = z.string().uuid().safeParse(id);
+  if (!parsedId.success) {
+    notFound();
+  }
+
   const { supabase } = await requireAdminUser();
 
   const [{ data: property }, { data: images }, { data: owners }] =
     await Promise.all([
-      supabase.from("properties").select("*").eq("id", id).single(),
+      supabase.from("properties").select("*").eq("id", parsedId.data).single(),
       supabase
         .from("property_images")
         .select("url, position")
-        .eq("property_id", id)
+        .eq("property_id", parsedId.data)
         .order("position", { ascending: true }),
       supabase
         .from("owners")

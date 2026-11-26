@@ -33,7 +33,12 @@ export function stripMarkdown(text: string | null | undefined): string {
 }
 
 export function serializeJsonLd(data: Record<string, unknown>): string {
-  return JSON.stringify(data).replace(/</g, "\\u003c");
+  return JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 export function buildRealEstateAgentJsonLd(): Record<string, unknown> {

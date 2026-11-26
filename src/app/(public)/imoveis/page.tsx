@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -38,10 +40,38 @@ function getStringParam(
   return value?.trim() || undefined;
 }
 
-function parseNumberParam(value: string | undefined): number | undefined {
+function parseNumberParam(
+  value: string | undefined,
+  max = 1_000_000_000,
+): number | undefined {
   if (!value) return undefined;
   const num = Number(value);
-  return Number.isFinite(num) && num >= 0 ? num : undefined;
+  return Number.isFinite(num) && num >= 0 && num <= max ? num : undefined;
+}
+
+function normalizeLocationKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchKnownLocation(
+  location: string | undefined,
+  knownLocations: string[],
+): string | undefined {
+  if (!location) return undefined;
+  const normalized = normalizeLocationKey(location);
+  if (!normalized) return undefined;
+
+  return knownLocations.find((item) => {
+    const normItem = normalizeLocationKey(item);
+    return (
+      normItem === normalized ||
+      normItem.replace(/^(condominio|residencial)\s+/, "") === normalized
+    );
+  });
 }
 
 const VALID_PURPOSES = new Set<PropertyPurpose>(["venda", "locacao"]);
@@ -72,7 +102,8 @@ function parseFilterSearchParams(
       ? (rawType as PropertyType)
       : undefined;
 
-  const location = getStringParam(rawParams.location);
+  const rawLocation = getStringParam(rawParams.location);
+  const location = rawLocation ? rawLocation.slice(0, 80) : undefined;
   const minPrice = parseNumberParam(getStringParam(rawParams.minPrice));
   const maxPrice = parseNumberParam(getStringParam(rawParams.maxPrice));
 
@@ -82,9 +113,12 @@ function parseFilterSearchParams(
       ? (rawSort as PropertySortOption)
       : "recentes";
 
-  const page = Math.max(
-    1,
-    Math.floor(parseNumberParam(getStringParam(rawParams.page)) ?? 1),
+  const page = Math.min(
+    500,
+    Math.max(
+      1,
+      Math.floor(parseNumberParam(getStringParam(rawParams.page), 500) ?? 1),
+    ),
   );
 
   return { purpose, type, location, minPrice, maxPrice, sort, page };
@@ -94,26 +128,46 @@ export async function generateMetadata({
   searchParams,
 }: ImoveisPageProps): Promise<Metadata> {
   const rawParams = await searchParams;
-  const { purpose, type, location } = parseFilterSearchParams(rawParams);
+  const { purpose, type, location, minPrice, maxPrice, page } =
+    parseFilterSearchParams(rawParams);
 
-  const activeCondominiums = location ? await getActiveCondominiums(50) : [];
+  const [activeCondominiums, availableLocations] = location
+    ? await Promise.all([getActiveCondominiums(50), getAvailableLocations()])
+    : [[], []];
+
+  // Só reflete `location` em metadados SEO/Open Graph/canonical quando corresponder
+  // a um condomínio ou bairro real da carteira (evita Content Injection / SEO Spam).
+  const verifiedLocation = matchKnownLocation(location, [
+    ...availableLocations,
+    "Cotia",
+    "Granja Vianna",
+  ]);
+  const isUnverifiedSearch = Boolean(location && !verifiedLocation);
+
   const seoCopy = formatListingSeoCopy({
     purpose,
     type,
-    location,
+    location: verifiedLocation,
     activeCondominiums,
   });
 
   const canonicalParams = new URLSearchParams();
   if (purpose) canonicalParams.set("purpose", purpose);
   if (type) canonicalParams.set("type", type);
-  if (location) canonicalParams.set("location", location);
+  if (verifiedLocation) canonicalParams.set("location", verifiedLocation);
   const qs = canonicalParams.toString();
   const canonicalPath = qs ? `/imoveis?${qs}` : "/imoveis";
+
+  const shouldNoIndex =
+    isUnverifiedSearch ||
+    minPrice !== undefined ||
+    maxPrice !== undefined ||
+    page > 1;
 
   return {
     title: seoCopy.title,
     description: seoCopy.description,
+    ...(shouldNoIndex ? { robots: { index: false, follow: true } } : {}),
     alternates: {
       canonical: canonicalPath,
     },
@@ -148,10 +202,16 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
     location ? getActiveCondominiums(50) : Promise.resolve([]),
   ]);
 
+  const verifiedLocation = matchKnownLocation(location, [
+    ...availableLocations,
+    "Cotia",
+    "Granja Vianna",
+  ]);
+
   const seoCopy = formatListingSeoCopy({
     purpose,
     type,
-    location,
+    location: verifiedLocation,
     activeCondominiums,
   });
 
@@ -254,11 +314,44 @@ export default async function ImoveisPage({ searchParams }: ImoveisPageProps) {
           )}
         </div>
 
-        <PropertySortSelect currentSort={sort} />
+        <Suspense fallback={<div className="h-9 w-44" />}>
+          <PropertySortSelect currentSort={sort} />
+        </Suspense>
       </div>
 
       {/* Grade de Imóveis */}
-      {result.properties.length > 0 ? (
+      {result.hasError ? (
+        <div
+          role="alert"
+          className="mt-10 rounded-xl border border-amber-200 bg-amber-50/70 px-6 py-12 text-center"
+        >
+          <AlertTriangle className="mx-auto h-10 w-10 text-amber-600" />
+          <h2 className="mt-4 font-serif text-xl font-semibold text-foreground">
+            Instabilidade temporária ao carregar os imóveis
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+            Não foi possível consultar a carteira agora. Atualize a página em
+            alguns instantes ou fale diretamente com o Marcelo no WhatsApp.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href={buildPageHref(result.page)}
+              className="inline-flex items-center gap-2 rounded-lg border border-primary bg-surface px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span>Tentar novamente</span>
+            </Link>
+            <TrackedWhatsAppLink
+              href={customWhatsApp}
+              label="Listagem Error State WhatsApp"
+              className="inline-flex items-center gap-2 rounded-lg bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-hover"
+            >
+              <MessageCircle className="h-4 w-4" />
+              <span>Falar com o Marcelo no WhatsApp</span>
+            </TrackedWhatsAppLink>
+          </div>
+        </div>
+      ) : result.properties.length > 0 ? (
         <>
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {result.properties.map((property) => (

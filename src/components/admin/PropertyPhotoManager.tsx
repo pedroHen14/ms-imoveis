@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/client";
 import { compressImageForUpload } from "@/lib/image-compression";
 
 const PROPERTY_BUCKET = "property-images";
+const MAX_PROPERTY_IMAGES = 40;
 
 interface PropertyPhotoManagerProps {
   images: string[];
@@ -27,20 +28,34 @@ export function PropertyPhotoManager({
   folderKey,
 }: PropertyPhotoManagerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const sessionUploadsRef = useRef<Map<string, string>>(new Map());
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingStatus, setUploadingStatus] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const remainingSlots = Math.max(0, MAX_PROPERTY_IMAGES - images.length);
+  const isAtLimit = remainingSlots === 0;
+
   async function processAndUploadFiles(fileList: FileList | File[]) {
-    const files = Array.from(fileList).filter((file) =>
+    if (remainingSlots <= 0) {
+      setUploadError(
+        `Limite máximo de ${MAX_PROPERTY_IMAGES} fotos por imóvel atingido. Remova alguma foto antes de enviar novas.`,
+      );
+      return;
+    }
+
+    const allImageFiles = Array.from(fileList).filter((file) =>
       file.type.startsWith("image/"),
     );
 
-    if (files.length === 0) {
+    if (allImageFiles.length === 0) {
       setUploadError("Selecione apenas arquivos de imagem (JPG, PNG ou WebP).");
       return;
     }
+
+    const skippedCount = Math.max(0, allImageFiles.length - remainingSlots);
+    const files = allImageFiles.slice(0, remainingSlots);
 
     setUploadError(null);
     setUploadNotice(null);
@@ -86,6 +101,7 @@ export function PropertyPhotoManager({
           data: { publicUrl },
         } = supabase.storage.from(PROPERTY_BUCKET).getPublicUrl(storagePath);
 
+        sessionUploadsRef.current.set(publicUrl, storagePath);
         uploadedUrls.push(publicUrl);
       }
 
@@ -98,13 +114,20 @@ export function PropertyPhotoManager({
                 Math.round((1 - totalCompressed / totalOriginal) * 100),
               )
             : 0;
+        const limitSuffix =
+          skippedCount > 0
+            ? ` (${skippedCount} arquivo(s) ignorado(s) pelo limite de ${MAX_PROPERTY_IMAGES} fotos)`
+            : "";
         setUploadNotice(
           `${uploadedUrls.length} foto(s) enviada(s) com sucesso${
             savedPct > 0 ? ` (compressão reduziu ${savedPct}% do tamanho)` : ""
-          }.`,
+          }${limitSuffix}.`,
         );
       }
     } catch (err) {
+      if (uploadedUrls.length > 0) {
+        onChange([...images, ...uploadedUrls]);
+      }
       const message =
         err instanceof Error
           ? err.message
@@ -135,17 +158,43 @@ export function PropertyPhotoManager({
   }
 
   function removeImage(index: number) {
+    const removedUrl = images[index];
     const next = images.filter((_, i) => i !== index);
     onChange(next);
+
+    // Se a foto foi enviada nesta sessão e ainda não foi vinculada ao imóvel,
+    // remove o arquivo do Storage imediatamente para evitar arquivos órfãos.
+    if (removedUrl) {
+      const storagePath = sessionUploadsRef.current.get(removedUrl);
+      if (storagePath && !next.includes(removedUrl)) {
+        sessionUploadsRef.current.delete(removedUrl);
+        const supabase = createClient();
+        void supabase.storage.from(PROPERTY_BUCKET).remove([storagePath]);
+      }
+    }
   }
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between text-xs text-muted">
+        <span>
+          Fotos na galeria:{" "}
+          <strong className="font-semibold text-foreground">
+            {images.length} / {MAX_PROPERTY_IMAGES}
+          </strong>
+        </span>
+        {isAtLimit ? (
+          <span className="font-medium text-amber-700">
+            Limite máximo atingido
+          </span>
+        ) : null}
+      </div>
+
       {/* Zona de upload */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragging(true);
+          if (!isAtLimit) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => {
@@ -166,7 +215,7 @@ export function PropertyPhotoManager({
           type="file"
           accept="image/jpeg,image/png,image/webp"
           multiple
-          disabled={Boolean(uploadingStatus)}
+          disabled={Boolean(uploadingStatus) || isAtLimit}
           onChange={(e) => {
             if (e.target.files?.length) {
               void processAndUploadFiles(e.target.files);
@@ -193,15 +242,16 @@ export function PropertyPhotoManager({
             </p>
             <p className="mt-1 text-xs text-muted">
               Upload múltiplo com compressão automática no navegador (JPG, PNG ou
-              WebP). A primeira foto será a capa.
+              WebP, até {MAX_PROPERTY_IMAGES} fotos). A primeira foto será a capa.
             </p>
             <button
               type="button"
+              disabled={isAtLimit}
               onClick={() => inputRef.current?.click()}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-hover"
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ImagePlus className="h-4 w-4" />
-              Selecionar Fotos
+              {isAtLimit ? "Limite de 40 fotos atingido" : "Selecionar Fotos"}
             </button>
           </>
         )}

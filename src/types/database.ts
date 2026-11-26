@@ -67,6 +67,24 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      admin_users: {
+        Row: {
+          user_id: string;
+          email: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          email?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          email?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       owners: {
         Row: {
           id: string;
@@ -302,6 +320,103 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      is_admin: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      search_public_properties: {
+        Args: {
+          p_purpose?: string | null;
+          p_type?: string | null;
+          p_location?: string | null;
+          p_min_price?: number | null;
+          p_max_price?: number | null;
+          p_sort?: string | null;
+          p_page?: number | null;
+          p_page_size?: number | null;
+        };
+        Returns: {
+          id: string;
+          code: number;
+          slug: string;
+          title: string;
+          type: PropertyType;
+          purpose: PropertyPurpose;
+          price: number | null;
+          condo_fee: number | null;
+          iptu: number | null;
+          area_total: number | null;
+          area_built: number | null;
+          bedrooms: number;
+          suites: number;
+          bathrooms: number;
+          parking: number;
+          condominium: string | null;
+          neighborhood: string | null;
+          city: string;
+          address: string | null;
+          description: string | null;
+          status: PropertyStatus;
+          is_featured: boolean;
+          created_at: string;
+          updated_at: string;
+          property_images: Json;
+          total_count: number;
+        }[];
+      };
+      save_property_with_images: {
+        Args: {
+          p_id?: string | null;
+          p_slug_base?: string | null;
+          p_title?: string | null;
+          p_type?: PropertyType | null;
+          p_purpose?: PropertyPurpose | null;
+          p_status?: PropertyStatus | null;
+          p_is_featured?: boolean | null;
+          p_owner_id?: string | null;
+          p_price?: number | null;
+          p_condo_fee?: number | null;
+          p_iptu?: number | null;
+          p_area_total?: number | null;
+          p_area_built?: number | null;
+          p_bedrooms?: number | null;
+          p_suites?: number | null;
+          p_bathrooms?: number | null;
+          p_parking?: number | null;
+          p_condominium?: string | null;
+          p_neighborhood?: string | null;
+          p_city?: string | null;
+          p_address?: string | null;
+          p_description?: string | null;
+          p_ai_notes?: string | null;
+          p_image_urls?: string[] | null;
+        };
+        Returns: {
+          property_id: string;
+          property_code: number;
+          property_slug: string;
+          removed_image_urls: string[];
+        }[];
+      };
+      get_property_image_summaries: {
+        Args: {
+          p_property_ids: string[];
+        };
+        Returns: {
+          property_id: string;
+          cover_url: string | null;
+          image_count: number;
+        }[];
+      };
+      get_owner_property_counts: {
+        Args: {
+          p_owner_ids: string[];
+        };
+        Returns: {
+          owner_id: string;
+          property_count: number;
+        }[];
+      };
       search_properties_for_ai: {
         Args: {
           p_purpose?: string | null;

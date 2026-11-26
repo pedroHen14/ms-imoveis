@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import {
   ArrowLeft,
   Bath,
@@ -33,6 +33,7 @@ import {
 import {
   getCoverImageUrl,
   getPropertyBySlug,
+  getPropertySlugByCode,
   getRelatedProperties,
 } from "@/lib/properties";
 import { buildRealEstateListingJsonLd, serializeJsonLd } from "@/lib/seo";
@@ -112,6 +113,13 @@ export async function generateMetadata({
   };
 }
 
+function extractTrailingPropertyCode(slug: string): number | null {
+  const match = slug.match(/-(\d{1,9})$/);
+  if (!match) return null;
+  const code = Number.parseInt(match[1], 10);
+  return Number.isSafeInteger(code) && code > 0 ? code : null;
+}
+
 export default async function PropertyDetailPage({
   params,
 }: PropertyDetailPageProps) {
@@ -119,6 +127,13 @@ export default async function PropertyDetailPage({
   const property = await getPropertyBySlug(slug);
 
   if (!property) {
+    const fallbackCode = extractTrailingPropertyCode(slug);
+    if (fallbackCode !== null) {
+      const canonicalSlug = await getPropertySlugByCode(fallbackCode);
+      if (canonicalSlug && canonicalSlug !== slug) {
+        permanentRedirect(`/imoveis/${canonicalSlug}`);
+      }
+    }
     notFound();
   }
 

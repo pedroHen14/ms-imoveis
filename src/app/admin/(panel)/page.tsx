@@ -14,34 +14,10 @@ import {
   PROPERTY_PURPOSE_LABELS,
   PROPERTY_TYPE_LABELS,
 } from "@/lib/format";
+import { PROPERTY_STATUS_BADGES } from "@/lib/status-badges";
+import type { PropertyStatus } from "@/types/database";
 
 export const dynamic = "force-dynamic";
-
-const PROPERTY_STATUS_BADGES: Record<
-  string,
-  { label: string; className: string }
-> = {
-  disponivel: {
-    label: "Disponível",
-    className: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  },
-  reservado: {
-    label: "Reservado",
-    className: "bg-amber-50 text-amber-800 border-amber-200",
-  },
-  vendido: {
-    label: "Vendido",
-    className: "bg-slate-100 text-slate-700 border-slate-200",
-  },
-  alugado: {
-    label: "Alugado",
-    className: "bg-blue-50 text-blue-800 border-blue-200",
-  },
-  rascunho: {
-    label: "Rascunho",
-    className: "bg-stone-100 text-stone-600 border-stone-200",
-  },
-};
 
 export default async function AdminDashboardPage() {
   const { supabase } = await requireAdminUser();
@@ -231,7 +207,7 @@ export default async function AdminDashboardPage() {
               <tbody className="divide-y divide-border">
                 {recentProperties.map((property) => {
                   const statusBadge =
-                    PROPERTY_STATUS_BADGES[property.status] ??
+                    PROPERTY_STATUS_BADGES[property.status as PropertyStatus] ??
                     PROPERTY_STATUS_BADGES.disponivel;
                   return (
                     <tr key={property.id} className="hover:bg-slate-50/70">

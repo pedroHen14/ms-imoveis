@@ -1,29 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import {
-  AlertTriangle,
-  Bot,
-  BotOff,
-  Building2,
-  Clock,
-  Loader2,
-  MessageCircle,
-  PauseCircle,
-  Pencil,
-  PlayCircle,
-  Plus,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Plus, Search, X } from "lucide-react";
 import type { Lead, LeadSource, LeadStatus } from "@/types/database";
-import {
-  BROKER_INFO,
-  buildWhatsAppUrl,
-  formatPhoneBR,
-  formatShortDateTimeBR,
-} from "@/lib/format";
+import { BROKER_INFO, buildWhatsAppUrl } from "@/lib/format";
+import { LEAD_SOURCE_OPTIONS, LEAD_STATUS_OPTIONS } from "@/lib/status-badges";
 import {
   deleteLead,
   registerLeadWhatsAppContact,
@@ -31,6 +13,11 @@ import {
   toggleLeadWhatsappAi,
   updateLeadStatus,
 } from "@/app/admin/(panel)/leads/actions";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { LeadFormModal } from "@/components/admin/LeadFormModal";
+import { LeadTableRow } from "@/components/admin/LeadTableRow";
+
+export type LeadFilterStatus = "todos" | "alertas" | "ativos" | LeadStatus;
 
 export interface LeadPropertyRef {
   id: string;
@@ -53,107 +40,35 @@ export interface LeadWithProperty extends Lead {
 interface LeadsManagerProps {
   leads: LeadWithProperty[];
   properties: LeadPropertyRef[];
+  counts: {
+    total: number;
+    active: number;
+    overdue: number;
+  };
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+  };
+  initialFilters: {
+    q: string;
+    status: LeadFilterStatus;
+    source: "todas" | LeadSource;
+  };
+  referenceNowMs: number;
 }
 
-const LEAD_STATUS_OPTIONS: {
-  value: LeadStatus;
-  label: string;
-  className: string;
-}[] = [
-  {
-    value: "novo",
-    label: "Novo",
-    className: "border-blue-200 bg-blue-50 text-blue-800",
-  },
-  {
-    value: "em_contato",
-    label: "Em contato",
-    className: "border-amber-200 bg-amber-50 text-amber-800",
-  },
-  {
-    value: "visita",
-    label: "Visita",
-    className: "border-purple-200 bg-purple-50 text-purple-800",
-  },
-  {
-    value: "proposta",
-    label: "Proposta",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  },
-  {
-    value: "fechado",
-    label: "Fechado",
-    className: "border-primary/30 bg-primary/10 text-primary",
-  },
-  {
-    value: "perdido",
-    label: "Perdido",
-    className: "border-stone-200 bg-stone-100 text-stone-600",
-  },
-];
-
-const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
-  site: "Site",
-  whatsapp: "WhatsApp",
-  indicacao: "Indicação",
-  newcore: "Newcore",
-  olx: "OLX",
-  marketplace: "Marketplace",
-};
-
-const LEAD_SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
-  { value: "site", label: "Site" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "indicacao", label: "Indicação" },
-  { value: "newcore", label: "Newcore" },
-  { value: "olx", label: "OLX" },
-  { value: "marketplace", label: "Facebook Marketplace" },
-];
-
-const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-
-function isLeadActive(status: LeadStatus): boolean {
-  return status !== "fechado" && status !== "perdido";
-}
-
-function getDaysSince(isoDate: string): number {
-  const diffMs = Date.now() - new Date(isoDate).getTime();
-  return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
-}
-
-function isLeadOverdue(lead: Lead): boolean {
-  if (!isLeadActive(lead.status)) return false;
-  return Date.now() - new Date(lead.last_contact_at).getTime() > THREE_DAYS_MS;
-}
-
-function formatLastContact(isoDate: string): string {
-  const days = getDaysSince(isoDate);
-  if (days === 0) return "Hoje";
-  if (days === 1) return "Ontem";
-  return `Há ${days} dias`;
-}
-
-function isWhatsappBotPaused(session: LeadWhatsappSession | null): boolean {
-  if (!session?.bot_paused_until) return false;
-  const pausedUntilMs = new Date(session.bot_paused_until).getTime();
-  return !Number.isNaN(pausedUntilMs) && pausedUntilMs > Date.now();
-}
-
-function getStatusSelectClass(status: LeadStatus): string {
-  return (
-    LEAD_STATUS_OPTIONS.find((item) => item.value === status)?.className ??
-    "border-border bg-white text-foreground"
-  );
-}
-
-export function LeadsManager({ leads, properties }: LeadsManagerProps) {
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "todos" | "alertas" | "ativos" | LeadStatus
-  >("todos");
-  const [sourceFilter, setSourceFilter] = useState<"todas" | LeadSource>(
-    "todas",
-  );
+export function LeadsManager({
+  leads,
+  properties,
+  counts,
+  pagination,
+  initialFilters,
+  referenceNowMs,
+}: LeadsManagerProps) {
+  const router = useRouter();
+  const [queryInput, setQueryInput] = useState(initialFilters.q);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadWithProperty | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -162,48 +77,72 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
   } | null>(null);
   const [busyLeadId, setBusyLeadId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const isFirstRenderRef = useRef(true);
 
-  const counts = useMemo(() => {
-    let overdue = 0;
-    let active = 0;
-    for (const lead of leads) {
-      if (isLeadActive(lead.status)) {
-        active += 1;
-        if (isLeadOverdue(lead)) overdue += 1;
-      }
-    }
-    return { total: leads.length, active, overdue };
-  }, [leads]);
+  const statusFilter = initialFilters.status;
+  const sourceFilter = initialFilters.source;
 
-  const filteredLeads = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return leads.filter((lead) => {
-      if (statusFilter === "alertas" && !isLeadOverdue(lead)) return false;
-      if (statusFilter === "ativos" && !isLeadActive(lead.status)) return false;
-      if (
-        statusFilter !== "todos" &&
-        statusFilter !== "alertas" &&
-        statusFilter !== "ativos" &&
-        lead.status !== statusFilter
-      ) {
-        return false;
-      }
+  useEffect(() => {
+    setQueryInput(initialFilters.q);
+  }, [initialFilters.q]);
 
-      if (sourceFilter !== "todas" && lead.source !== sourceFilter) {
-        return false;
-      }
+  function navigateWithFilters(next: {
+    q?: string;
+    status?: LeadFilterStatus;
+    source?: "todas" | LeadSource;
+    page?: number;
+  }) {
+    const q = (next.q ?? queryInput).trim();
+    const status = next.status ?? statusFilter;
+    const source = next.source ?? sourceFilter;
+    const page = next.page ?? 1;
 
-      if (!q) return true;
-      return (
-        lead.name.toLowerCase().includes(q) ||
-        lead.phone.toLowerCase().includes(q) ||
-        (lead.email ?? "").toLowerCase().includes(q) ||
-        (lead.notes ?? "").toLowerCase().includes(q) ||
-        (lead.property?.title ?? "").toLowerCase().includes(q) ||
-        (lead.property ? `#${lead.property.code}` : "").includes(q)
-      );
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (status && status !== "todos") params.set("status", status);
+    if (source && source !== "todas") params.set("source", source);
+    if (page > 1) params.set("page", String(page));
+
+    const qs = params.toString();
+    router.replace(qs ? `/admin/leads?${qs}` : "/admin/leads", {
+      scroll: false,
     });
-  }, [leads, query, statusFilter, sourceFilter]);
+  }
+
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    if (queryInput.trim() === initialFilters.q.trim()) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      const trimmed = queryInput.trim();
+      if (trimmed) params.set("q", trimmed);
+      if (initialFilters.status && initialFilters.status !== "todos") {
+        params.set("status", initialFilters.status);
+      }
+      if (initialFilters.source && initialFilters.source !== "todas") {
+        params.set("source", initialFilters.source);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `/admin/leads?${qs}` : "/admin/leads", {
+        scroll: false,
+      });
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    queryInput,
+    initialFilters.q,
+    initialFilters.status,
+    initialFilters.source,
+    router,
+  ]);
 
   function openNewModal() {
     setEditingLead(null);
@@ -301,7 +240,6 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
       const result = await toggleLeadWhatsappAi({
         leadId: lead.id,
         pause,
-        sessionPhone: lead.whatsappSession?.phone ?? null,
       });
       setBusyLeadId(null);
       if (result.ok) {
@@ -349,7 +287,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => setStatusFilter("todos")}
+          onClick={() => navigateWithFilters({ status: "todos", page: 1 })}
           className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
             statusFilter === "todos"
               ? "border-primary bg-primary text-white"
@@ -361,7 +299,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
 
         <button
           type="button"
-          onClick={() => setStatusFilter("alertas")}
+          onClick={() => navigateWithFilters({ status: "alertas", page: 1 })}
           className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
             statusFilter === "alertas"
               ? "border-amber-600 bg-amber-600 text-white"
@@ -376,7 +314,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
 
         <button
           type="button"
-          onClick={() => setStatusFilter("ativos")}
+          onClick={() => navigateWithFilters({ status: "ativos", page: 1 })}
           className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
             statusFilter === "ativos"
               ? "border-primary bg-primary text-white"
@@ -390,7 +328,7 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
           <button
             key={opt.value}
             type="button"
-            onClick={() => setStatusFilter(opt.value)}
+            onClick={() => navigateWithFilters({ status: opt.value, page: 1 })}
             className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
               statusFilter === opt.value
                 ? "border-primary bg-primary text-white"
@@ -409,8 +347,8 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input
               type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
               placeholder="Buscar por nome, telefone, imóvel ou nota..."
               className="w-full rounded-lg border border-border bg-white py-2.5 pl-9 pr-3.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
             />
@@ -420,7 +358,10 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
             aria-label="Filtrar por origem"
             value={sourceFilter}
             onChange={(e) =>
-              setSourceFilter(e.target.value as "todas" | LeadSource)
+              navigateWithFilters({
+                source: e.target.value as "todas" | LeadSource,
+                page: 1,
+              })
             }
             className="rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
           >
@@ -467,14 +408,14 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
 
       {/* Tabela do Mini-CRM */}
       <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
-        {filteredLeads.length === 0 ? (
+        {leads.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-sm text-muted">
-              {leads.length === 0
+              {counts.total === 0
                 ? "Nenhum lead cadastrado ainda. Os contatos do site aparecem aqui automaticamente ou você pode cadastrar indicações manualmente."
                 : "Nenhum lead encontrado com os filtros aplicados."}
             </p>
-            {leads.length === 0 ? (
+            {counts.total === 0 ? (
               <button
                 type="button"
                 onClick={openNewModal}
@@ -486,421 +427,64 @@ export function LeadsManager({ leads, properties }: LeadsManagerProps) {
             ) : null}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
-                  <th className="px-4 py-3.5">Interessado</th>
-                  <th className="px-4 py-3.5">Imóvel / Observações</th>
-                  <th className="px-4 py-3.5">Origem</th>
-                  <th className="px-4 py-3.5">Assistente IA</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Último Contato</th>
-                  <th className="px-4 py-3.5 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredLeads.map((lead) => {
-                  const overdue = isLeadOverdue(lead);
-                  const daysSince = getDaysSince(lead.last_contact_at);
-                  const isRowBusy = isPending && busyLeadId === lead.id;
-                  const hasSession = Boolean(lead.whatsappSession);
-                  const botPaused = isWhatsappBotPaused(lead.whatsappSession);
-                  const pausedUntilLabel =
-                    botPaused && lead.whatsappSession?.bot_paused_until
-                      ? formatShortDateTimeBR(
-                          lead.whatsappSession.bot_paused_until,
-                        )
-                      : "";
-
-                  return (
-                    <tr
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <th className="px-4 py-3.5">Interessado</th>
+                    <th className="px-4 py-3.5">Imóvel / Observações</th>
+                    <th className="px-4 py-3.5">Origem</th>
+                    <th className="px-4 py-3.5">Assistente IA</th>
+                    <th className="px-4 py-3.5">Status</th>
+                    <th className="px-4 py-3.5">Último Contato</th>
+                    <th className="px-4 py-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {leads.map((lead) => (
+                    <LeadTableRow
                       key={lead.id}
-                      className={`transition hover:bg-slate-50/70 ${
-                        overdue ? "bg-amber-50/35" : ""
-                      }`}
-                    >
-                      <td className="px-4 py-4 align-top">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-foreground">
-                            {lead.name}
-                          </span>
-                          {overdue ? (
-                            <span
-                              title="Lead ativo sem contato há mais de 3 dias"
-                              className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              Follow-up ({daysSince}d)
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-0.5 text-xs text-foreground">
-                          {formatPhoneBR(lead.phone)}
-                        </p>
-                        {lead.email ? (
-                          <p className="text-xs text-muted">{lead.email}</p>
-                        ) : null}
-                      </td>
+                      lead={lead}
+                      referenceNowMs={referenceNowMs}
+                      isBusy={isPending && busyLeadId === lead.id}
+                      onStatusChange={handleQuickStatusChange}
+                      onWhatsAppClick={handleWhatsAppClick}
+                      onToggleAi={handleToggleAi}
+                      onEdit={openEditModal}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-                      <td className="max-w-xs px-4 py-4 align-top">
-                        {lead.property ? (
-                          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-primary">
-                            <Building2 className="h-3.5 w-3.5 shrink-0" />
-                            <span className="line-clamp-1">
-                              #{lead.property.code} — {lead.property.title}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted">
-                            Interesse geral
-                          </span>
-                        )}
-                        {lead.notes ? (
-                          <p className="mt-1 line-clamp-2 text-xs text-muted">
-                            {lead.notes}
-                          </p>
-                        ) : null}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 align-top">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-foreground">
-                          {LEAD_SOURCE_LABELS[lead.source] ?? lead.source}
-                        </span>
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 align-top">
-                        {hasSession ? (
-                          <div className="flex flex-col items-start gap-1.5">
-                            {botPaused ? (
-                              <span
-                                title={`Atendimento automatizado pausado até ${pausedUntilLabel}`}
-                                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900"
-                              >
-                                <BotOff className="h-3 w-3 shrink-0" />
-                                IA Pausada até {pausedUntilLabel}
-                              </span>
-                            ) : (
-                              <span
-                                title="Assistente de WhatsApp respondendo este contato normalmente"
-                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800"
-                              >
-                                <Bot className="h-3 w-3 shrink-0" />
-                                IA Ativa
-                              </span>
-                            )}
-
-                            <button
-                              type="button"
-                              disabled={isRowBusy}
-                              onClick={() => handleToggleAi(lead, !botPaused)}
-                              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-60 ${
-                                botPaused
-                                  ? "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"
-                                  : "border-amber-200 bg-white text-amber-900 hover:bg-amber-50"
-                              }`}
-                            >
-                              {isRowBusy ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : botPaused ? (
-                                <PlayCircle className="h-3 w-3" />
-                              ) : (
-                                <PauseCircle className="h-3 w-3" />
-                              )}
-                              {botPaused ? "Reativar IA" : "Pausar IA (24h)"}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted">—</span>
-                        )}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 align-top">
-                        <select
-                          aria-label={`Status do lead ${lead.name}`}
-                          value={lead.status}
-                          disabled={isRowBusy}
-                          onChange={(e) =>
-                            handleQuickStatusChange(
-                              lead.id,
-                              e.target.value as LeadStatus,
-                            )
-                          }
-                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold outline-none transition focus:ring-2 focus:ring-primary/20 disabled:opacity-60 ${getStatusSelectClass(lead.status)}`}
-                        >
-                          {LEAD_STATUS_OPTIONS.map((opt) => (
-                            <option
-                              key={opt.value}
-                              value={opt.value}
-                              className="bg-white text-foreground"
-                            >
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 align-top">
-                        <div
-                          className={`inline-flex items-center gap-1 text-xs font-medium ${
-                            overdue ? "text-amber-800" : "text-muted"
-                          }`}
-                        >
-                          <Clock className="h-3.5 w-3.5" />
-                          {formatLastContact(lead.last_contact_at)}
-                        </div>
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 text-right align-top">
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleWhatsAppClick(lead)}
-                            disabled={isRowBusy}
-                            title={
-                              hasSession
-                                ? "Abrir conversa no WhatsApp, registrar contato e pausar IA por 24h"
-                                : "Abrir conversa no WhatsApp e registrar contato agora"
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-whatsapp px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-whatsapp-hover disabled:opacity-60"
-                          >
-                            <MessageCircle className="h-3.5 w-3.5" />
-                            Chamar no WhatsApp
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(lead)}
-                            title="Editar lead"
-                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            Editar
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(lead)}
-                            disabled={isRowBusy}
-                            title="Excluir lead"
-                            className="inline-flex items-center rounded-lg border border-border p-1.5 text-red-700 transition hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            <AdminPagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              totalItems={pagination.totalItems}
+              pageSize={pagination.pageSize}
+              itemLabelSingular="lead"
+              itemLabelPlural="leads"
+              disabled={isPending}
+              onPageChange={(nextPage) =>
+                navigateWithFilters({ page: nextPage })
+              }
+            />
+          </>
         )}
       </div>
 
       {/* Modal Criar / Editar Lead */}
       {modalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="lead-modal-title"
-        >
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <h2
-                id="lead-modal-title"
-                className="font-serif text-xl font-semibold text-foreground"
-              >
-                {editingLead ? "Editar Lead" : "Novo Lead Manual"}
-              </h2>
-              <button
-                type="button"
-                onClick={closeModal}
-                className="rounded-lg p-1.5 text-muted hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="mt-5 space-y-4">
-              {editingLead ? (
-                <input type="hidden" name="id" value={editingLead.id} />
-              ) : null}
-
-              {feedback?.type === "error" ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-800">
-                  {feedback.text}
-                </div>
-              ) : null}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="lead-name"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Nome do interessado *
-                  </label>
-                  <input
-                    id="lead-name"
-                    name="name"
-                    type="text"
-                    required
-                    defaultValue={editingLead?.name ?? ""}
-                    placeholder="Ex.: Fernanda Oliveira"
-                    className="mt-1.5 w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="lead-phone"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Telefone / WhatsApp *
-                  </label>
-                  <input
-                    id="lead-phone"
-                    name="phone"
-                    type="tel"
-                    required
-                    defaultValue={editingLead?.phone ?? ""}
-                    placeholder="(11) 99999-9999"
-                    className="mt-1.5 w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="lead-email"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    E-mail (opcional)
-                  </label>
-                  <input
-                    id="lead-email"
-                    name="email"
-                    type="email"
-                    defaultValue={editingLead?.email ?? ""}
-                    placeholder="cliente@email.com"
-                    className="mt-1.5 w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="lead-source"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Origem *
-                  </label>
-                  <select
-                    id="lead-source"
-                    name="source"
-                    defaultValue={editingLead?.source ?? "indicacao"}
-                    className="mt-1.5 w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  >
-                    {LEAD_SOURCE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="lead-status"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Status *
-                  </label>
-                  <select
-                    id="lead-status"
-                    name="status"
-                    defaultValue={editingLead?.status ?? "novo"}
-                    className="mt-1.5 w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  >
-                    {LEAD_STATUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="lead-property"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Imóvel de interesse (opcional)
-                  </label>
-                  <select
-                    id="lead-property"
-                    name="property_id"
-                    defaultValue={editingLead?.property_id ?? ""}
-                    className="mt-1.5 w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  >
-                    <option value="">Interesse geral / sem imóvel vinculado</option>
-                    {properties.map((prop) => (
-                      <option key={prop.id} value={prop.id}>
-                        #{prop.code} — {prop.title}
-                        {prop.condominium ? ` (${prop.condominium})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label
-                    htmlFor="lead-notes"
-                    className="block text-sm font-medium text-foreground"
-                  >
-                    Observações / Histórico
-                  </label>
-                  <textarea
-                    id="lead-notes"
-                    name="notes"
-                    rows={3}
-                    defaultValue={editingLead?.notes ?? ""}
-                    placeholder="Ex.: Indicação da Newcore, busca casa até R$ 650 mil em Cotia com financiamento..."
-                    className="mt-1.5 w-full rounded-lg border border-border px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 border-t border-border pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={isPending}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-slate-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-hover disabled:opacity-60"
-                >
-                  {isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : editingLead ? (
-                    "Salvar Alterações"
-                  ) : (
-                    "Cadastrar Lead"
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <LeadFormModal
+          editingLead={editingLead}
+          properties={properties}
+          errorMessage={feedback?.type === "error" ? feedback.text : null}
+          isPending={isPending}
+          onClose={closeModal}
+          onSubmit={handleSave}
+        />
       ) : null}
     </div>
   );

@@ -1,12 +1,26 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import Script from "next/script";
 import { CheckCircle2, Loader2, Send } from "lucide-react";
 import {
   submitPublicLead,
   type LeadFormState,
 } from "@/app/(public)/imoveis/[slug]/actions";
 import { trackLeadConversion } from "@/lib/tracking";
+
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || "";
+
+interface TurnstileApi {
+  reset: (widgetOrContainer?: string | HTMLElement) => void;
+}
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
 
 interface LeadFormProps {
   propertyId: string;
@@ -39,8 +53,14 @@ export function LeadForm({
     submitPublicLead,
     INITIAL_STATE,
   );
+  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [notes, setNotes] = useState(
+    `Olá Marcelo, tenho interesse no imóvel ${propertyTitle} (Cód. ${propertyCode}) e gostaria de agendar uma visita.`,
+  );
   const trackedSuccessRef = useRef(false);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (state.status === "success" && !trackedSuccessRef.current) {
@@ -53,6 +73,23 @@ export function LeadForm({
       });
     }
   }, [state.status, propertyCode, propertyTitle, propertyPrice]);
+
+  useEffect(() => {
+    if (
+      TURNSTILE_SITE_KEY &&
+      state.status === "error" &&
+      state.resetTurnstile &&
+      turnstileContainerRef.current &&
+      typeof window !== "undefined" &&
+      typeof window.turnstile?.reset === "function"
+    ) {
+      try {
+        window.turnstile.reset(turnstileContainerRef.current);
+      } catch {
+        // Silencioso caso o widget ainda não tenha sido inicializado
+      }
+    }
+  }, [state]);
 
   if (state.status === "success") {
     return (
@@ -70,6 +107,22 @@ export function LeadForm({
     <form action={formAction} className="space-y-3.5" noValidate>
       <input type="hidden" name="propertyId" value={propertyId} />
 
+      {/* Campo honeypot invisível para mitigação de spam automatizado */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0"
+      >
+        <label htmlFor="lead-website">Não preencha este campo</label>
+        <input
+          id="lead-website"
+          name="website"
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          defaultValue=""
+        />
+      </div>
+
       <div>
         <label
           htmlFor="lead-name"
@@ -83,6 +136,8 @@ export function LeadForm({
           type="text"
           required
           autoComplete="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           placeholder="Como podemos te chamar?"
           className="h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground transition-colors focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/15"
         />
@@ -126,6 +181,8 @@ export function LeadForm({
           name="email"
           type="email"
           autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           placeholder="voce@exemplo.com"
           className="h-11 w-full rounded-lg border border-border bg-background px-3.5 text-sm text-foreground transition-colors focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/15"
         />
@@ -145,13 +202,30 @@ export function LeadForm({
           id="lead-notes"
           name="notes"
           rows={3}
-          defaultValue={`Olá Marcelo, tenho interesse no imóvel ${propertyTitle} (Cód. ${propertyCode}) e gostaria de agendar uma visita.`}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
           className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground transition-colors focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-primary/15"
         />
         {state.fieldErrors?.notes && (
           <p className="mt-1 text-xs text-red-600">{state.fieldErrors.notes}</p>
         )}
       </div>
+
+      {TURNSTILE_SITE_KEY && (
+        <>
+          <Script
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            strategy="afterInteractive"
+          />
+          <div
+            ref={turnstileContainerRef}
+            className="cf-turnstile"
+            data-sitekey={TURNSTILE_SITE_KEY}
+            data-theme="light"
+            data-language="pt-BR"
+          />
+        </>
+      )}
 
       {state.status === "error" && state.message && (
         <p
@@ -180,8 +254,10 @@ export function LeadForm({
         )}
       </button>
 
-      <p className="text-center text-[11px] text-muted">
-        Seus dados são utilizados apenas para o retorno do corretor.
+      <p className="text-center text-[11px] leading-relaxed text-muted">
+        Ao enviar, você concorda com o uso dos seus dados exclusivamente para
+        atendimento imobiliário pelo corretor (LGPD). Você pode solicitar a
+        exclusão dos dados a qualquer momento pelo WhatsApp ou e-mail.
       </p>
     </form>
   );
